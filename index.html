@@ -129,17 +129,12 @@
             <span class="eyebrow-badge">Classroom Teacher Schedule</span>
             <h2 id="teacher-screen-title" class="page-title">Teacher Name</h2>
           </div>
-          <div class="slot-counter-pill" id="teacher-slot-counter">0 / 24 Scheduled</div>
-        </div>
-
-        <div class="helper-callout">
-          <strong>Instructions:</strong> Enter your scheduled conferences below. To cancel a previously saved conference, clear its Name and time fields and click <strong>Submit Changes</strong>. 
         </div>
 
         <form id="teacher-schedule-form" novalidate>
           <div class="schedule-table-card">
             <div class="schedule-column-headers" aria-hidden="true">
-              <div class="col-hdr col-slot">#</div>
+              <div class="col-hdr col-action"></div>
               <div class="col-hdr col-day">Day</div>
               <div class="col-hdr col-time">Time</div>
               <div class="col-hdr col-ampm">AM / PM</div>
@@ -173,7 +168,7 @@
         </div>
 
         <div class="helper-callout">
-          Enter assigned translator names or coordination notes in the text field next to each conference, then click <strong>Submit Changes</strong> at the bottom of the page.
+          Enter translator name to scheduled conference and click Submit Changes
         </div>
 
         <form id="translators-form" novalidate>
@@ -253,13 +248,11 @@
           <div class="kpi-card">
             <span class="kpi-label">Total Scheduled Conferences</span>
             <span id="kpi-total-scheduled" class="kpi-value">0</span>
-            <span class="kpi-subtext">Across all classroom teachers (MON–FRI)</span>
           </div>
 
           <div class="kpi-card kpi-card-accent">
-            <span class="kpi-label">Schedule Completion</span>
+            <span class="kpi-label">Percent Scheduled</span>
             <span id="kpi-completion-pct" class="kpi-value">0.0%</span>
-            <span id="kpi-completion-ratio" class="kpi-subtext">0 / 660 target conferences (22 per teacher)</span>
           </div>
 
           <div class="kpi-card">
@@ -298,8 +291,6 @@
 
         <!-- 8.5" x 11" Letter PDF Print Triggers -->
         <div class="office-subsection">
-          <h3 class="subsection-heading">Print Daily In-Person Visitor Rosters (8.5&Prime; &times; 11&Prime; Letter)</h3>
-          <p class="section-subtitle">Generates a chronological, print-formatted in-person visitor schedule (remote conferences excluded) for front desk &amp; security check-in.</p>
           <div class="print-buttons-grid">
             <button type="button" class="btn-print-day" data-print-day="TUE">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
