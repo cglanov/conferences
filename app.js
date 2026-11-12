@@ -319,7 +319,7 @@ function buildConferenceRowElement(entry) {
       <input
         type="text"
         class="name-input"
-        placeholder="Student / Parent Name"
+        placeholder="Name"
         value="${escapeHtml(nameVal)}"
         aria-label="Conference Name"
       />
