@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AAEE Conferences — Scheduling &amp; Coordination System</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- =====================================================================
+       MAIN INTERACTIVE APPLICATION ROOT (Hidden during @media print)
+       ===================================================================== -->
+  <div id="app-root" class="app-shell">
+    <!-- Persistent Top Header Banner -->
+    <header class="top-header">
+      <div class="header-inner">
+        <div class="header-left">
+          <button
+            type="button"
+            id="back-to-home-btn"
+            class="btn-back-home hidden"
+            aria-label="Back to Home"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            <span>Back to Home</span>
+          </button>
+        </div>
+
+        <div class="header-center">
+          <h1 class="brand-title">AAEE Conferences</h1>
+        </div>
+
+        <div class="header-right">
+          <button
+            type="button"
+            id="refresh-data-btn"
+            class="btn-icon-refresh"
+            title="Refresh schedule data from Google Sheets"
+            aria-label="Refresh schedule data"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span class="refresh-label">Sync</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Status / Feedback Banner -->
+    <div id="status-banner" class="status-banner hidden" role="status" aria-live="polite"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden" role="alert" aria-busy="true">
+      <div class="spinner-card">
+        <div class="spinner"></div>
+        <p id="loading-message" class="loading-text">Loading conference schedules...</p>
+      </div>
+    </div>
+
+    <!-- Main Content Viewport -->
+    <main class="main-container">
+      <!-- =================================================================
+           SCREEN 1: START SCREEN (HOME)
+           ================================================================= -->
+      <section id="screen-home" class="screen active" aria-labelledby="home-section-title">
+        <div class="section-header-bar">
+          <h2 id="home-section-title" class="section-title">Classroom Teachers</h2>
+          <p class="section-subtitle">Select your name below to enter, review, or update your parent-teacher conferences.</p>
+        </div>
+
+        <div id="home-teacher-grid" class="teacher-grid">
+          <!-- Dynamically populated from Row 1 of 'teachers' tab (excluding A1) -->
+        </div>
+
+        <!-- Bottom Navigation Footer Bar -->
+        <nav class="home-bottom-nav" aria-label="Role Navigation">
+          <div class="nav-slot nav-left">
+            <button type="button" id="nav-translators-btn" class="btn-role btn-role-teal">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 8l6 6"></path>
+                <path d="M4 14l6-6 2-3"></path>
+                <path d="M2 5h12"></path>
+                <path d="M7 2h1"></path>
+                <path d="M22 22l-5-10-5 10"></path>
+                <path d="M14 18h6"></path>
+              </svg>
+              <span>Translators</span>
+            </button>
+          </div>
+
+          <div class="nav-slot nav-center">
+            <button type="button" id="nav-other-staff-btn" class="btn-role btn-role-slate">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <span>Other Staff</span>
+            </button>
+          </div>
+
+          <div class="nav-slot nav-right">
+            <button type="button" id="nav-main-office-btn" class="btn-role btn-role-navy">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span>Main Office &amp; Security</span>
+            </button>
+          </div>
+        </nav>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 2: CLASSROOM TEACHER SCHEDULE ENTRY SCREEN
+           ================================================================= -->
+      <section id="screen-teacher" class="screen" aria-labelledby="teacher-screen-title">
+        <div class="screen-title-row">
+          <div>
+            <span class="eyebrow-badge">Classroom Teacher Schedule</span>
+            <h2 id="teacher-screen-title" class="page-title">Teacher Name</h2>
+          </div>
+          <div class="slot-counter-pill" id="teacher-slot-counter">0 / 24 Scheduled</div>
+        </div>
+
+        <div class="helper-callout">
+          <strong>Instructions:</strong> Enter your scheduled conferences below (up to 24 slots). To cancel a previously saved conference, clear its Name and time fields and click <strong>Submit Changes</strong>. Single-digit minutes (e.g., <code>5</code>) auto-pad to <code>05</code>.
+        </div>
+
+        <form id="teacher-schedule-form" novalidate>
+          <div class="schedule-table-card">
+            <div class="schedule-column-headers" aria-hidden="true">
+              <div class="col-hdr col-slot">#</div>
+              <div class="col-hdr col-day">Day</div>
+              <div class="col-hdr col-time">Time</div>
+              <div class="col-hdr col-ampm">AM / PM</div>
+              <div class="col-hdr col-name">Conference Name</div>
+              <div class="col-hdr col-modality">Meeting Type</div>
+              <div class="col-hdr col-translator">Translator Needed</div>
+            </div>
+
+            <div id="teacher-rows-container" class="teacher-rows-container">
+              <!-- 24 identical conference entry rows injected here -->
+            </div>
+          </div>
+
+          <div class="form-submit-bar">
+            <button type="submit" id="teacher-submit-btn" class="btn-primary-submit">
+              Submit Changes
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 3: TRANSLATORS SCREEN
+           ================================================================= -->
+      <section id="screen-translators" class="screen" aria-labelledby="translators-screen-title">
+        <div class="screen-title-row">
+          <div>
+            <span class="eyebrow-badge">Language Support Coordination</span>
+            <h2 id="translators-screen-title" class="page-title">Translator Assignments</h2>
+          </div>
+        </div>
+
+        <div class="helper-callout">
+          Enter assigned translator names or coordination notes in the text field next to each conference, then click <strong>Submit Changes</strong> at the bottom of the page.
+        </div>
+
+        <form id="translators-form" novalidate>
+          <div class="translators-two-col">
+            <!-- Left Pane: Spanish Translation Requests -->
+            <div class="translator-pane">
+              <div class="pane-header pane-header-spanish">
+                <h3>Spanish Translation Requests</h3>
+                <span id="spanish-count-badge" class="count-pill">0</span>
+              </div>
+              <div id="spanish-requests-list" class="translator-cards-list">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+            <!-- Right Pane: Portuguese Translation Requests -->
+            <div class="translator-pane">
+              <div class="pane-header pane-header-portuguese">
+                <h3>Portuguese Translation Requests</h3>
+                <span id="portuguese-count-badge" class="count-pill">0</span>
+              </div>
+              <div id="portuguese-requests-list" class="translator-cards-list">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <div class="form-submit-bar">
+            <button type="submit" id="translators-submit-btn" class="btn-primary-submit">
+              Submit Changes
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 4: OTHER STAFF SCREEN (READ-ONLY)
+           ================================================================= -->
+      <section id="screen-other-staff" class="screen" aria-labelledby="other-staff-title">
+        <div class="screen-title-row">
+          <div>
+            <span class="eyebrow-badge">Read-Only Schedule Lookup</span>
+            <h2 id="other-staff-title" class="page-title">Other Staff — Classroom Schedules</h2>
+          </div>
+        </div>
+
+        <p class="section-subtitle">Select a classroom teacher below to view their scheduled parent-teacher conferences.</p>
+
+        <div id="other-staff-teacher-grid" class="teacher-grid teacher-grid-compact">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div id="other-staff-schedule-panel" class="readonly-schedule-panel hidden">
+          <div class="readonly-panel-header">
+            <h3 id="other-staff-selected-teacher" class="readonly-teacher-heading">Teacher Schedule</h3>
+            <span id="other-staff-conference-count" class="count-pill count-pill-navy">0 Conferences</span>
+          </div>
+          <div id="other-staff-schedule-content" class="readonly-schedule-content">
+            <!-- Read-only chronological schedule table -->
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 5: MAIN OFFICE & SECURITY DASHBOARD & PRINT SYSTEM
+           ================================================================= -->
+      <section id="screen-main-office" class="screen" aria-labelledby="main-office-title">
+        <div class="screen-title-row">
+          <div>
+            <span class="eyebrow-badge">Administration &amp; Front Desk</span>
+            <h2 id="main-office-title" class="page-title">Main Office &amp; Security</h2>
+          </div>
+        </div>
+
+        <!-- Primary School-Wide KPI Cards -->
+        <div class="kpi-grid-primary">
+          <div class="kpi-card">
+            <span class="kpi-label">Total Scheduled Conferences</span>
+            <span id="kpi-total-scheduled" class="kpi-value">0</span>
+            <span class="kpi-subtext">Across all classroom teachers (MON–FRI)</span>
+          </div>
+
+          <div class="kpi-card kpi-card-accent">
+            <span class="kpi-label">Schedule Completion</span>
+            <span id="kpi-completion-pct" class="kpi-value">0.0%</span>
+            <span id="kpi-completion-ratio" class="kpi-subtext">0 / 660 target conferences (22 per teacher)</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-label">Total In-Person Conferences</span>
+            <span id="kpi-total-inperson" class="kpi-value">0</span>
+            <span id="kpi-remote-subtext" class="kpi-subtext">0 remote conferences scheduled</span>
+          </div>
+        </div>
+
+        <!-- Daily In-Person Breakdown (Tuesday through Friday only) -->
+        <div class="office-subsection">
+          <h3 class="subsection-heading">In-Person Visitor Counts (Tuesday – Friday)</h3>
+          <div class="kpi-grid-days">
+            <div class="day-kpi-card">
+              <span class="day-kpi-name">Tuesday</span>
+              <span id="kpi-tue-inperson" class="day-kpi-count">0</span>
+              <span class="day-kpi-tag">In-Person</span>
+            </div>
+            <div class="day-kpi-card">
+              <span class="day-kpi-name">Wednesday</span>
+              <span id="kpi-wed-inperson" class="day-kpi-count">0</span>
+              <span class="day-kpi-tag">In-Person</span>
+            </div>
+            <div class="day-kpi-card">
+              <span class="day-kpi-name">Thursday</span>
+              <span id="kpi-thu-inperson" class="day-kpi-count">0</span>
+              <span class="day-kpi-tag">In-Person</span>
+            </div>
+            <div class="day-kpi-card">
+              <span class="day-kpi-name">Friday</span>
+              <span id="kpi-fri-inperson" class="day-kpi-count">0</span>
+              <span class="day-kpi-tag">In-Person</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8.5" x 11" Letter PDF Print Triggers -->
+        <div class="office-subsection">
+          <h3 class="subsection-heading">Print Daily In-Person Visitor Rosters (8.5&Prime; &times; 11&Prime; Letter)</h3>
+          <p class="section-subtitle">Generates a chronological, print-formatted in-person visitor schedule (remote conferences excluded) for front desk &amp; security check-in.</p>
+          <div class="print-buttons-grid">
+            <button type="button" class="btn-print-day" data-print-day="TUE">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print Tuesday Conferences</span>
+            </button>
+
+            <button type="button" class="btn-print-day" data-print-day="WED">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print Wednesday Conferences</span>
+            </button>
+
+            <button type="button" class="btn-print-day" data-print-day="THU">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print Thursday Conferences</span>
+            </button>
+
+            <button type="button" class="btn-print-day" data-print-day="FRI">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+              <span>Print Friday Conferences</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- =====================================================================
+       DEDICATED 8.5" x 11" PORTRAIT PRINT DOCUMENT CONTAINER
+       ===================================================================== -->
+  <div id="print-area" class="print-area" aria-hidden="true"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
