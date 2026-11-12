@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
- * Frontend Controller (app.js) — Specification v2.0
+ * Frontend Controller (app.js) — Specification v2.1
  * ============================================================================
  */
 
@@ -238,14 +238,13 @@ function openTeacherScreen(teacherName) {
 
   for (let i = 0; i < CONSTANTS.MAX_SLOTS; i++) {
     const entry = existingEntries[i] || null;
-    const rowEl = buildConferenceRowElement(i + 1, entry);
+    const rowEl = buildConferenceRowElement(entry);
     container.appendChild(rowEl);
   }
-
-  updateTeacherSlotCounter();
 }
 
-function buildConferenceRowElement(slotNumber, entry) {
+function buildConferenceRowElement(entry) {
+  const isInitiallyPopulated = Boolean(entry);
   const dayVal = entry ? entry.day : 'WED';
   const hourVal = entry ? String(entry.hour) : '';
   const minVal = entry ? String(entry.minute).padStart(2, '0') : '';
@@ -256,7 +255,6 @@ function buildConferenceRowElement(slotNumber, entry) {
 
   const row = document.createElement('div');
   row.className = 'conference-row';
-  row.dataset.slot = String(slotNumber);
 
   // Build Day options
   const dayOptionsHtml = CONSTANTS.DAYS.map((d) => {
@@ -265,11 +263,18 @@ function buildConferenceRowElement(slotNumber, entry) {
   }).join('');
 
   row.innerHTML = `
-    <div class="row-slot-badge">${slotNumber}</div>
+    <!-- Cancel Conference Action Button (Visible on populated rows) -->
+    <div class="action-cell">
+      <button
+        type="button"
+        class="btn-cancel-conference ${isInitiallyPopulated ? '' : 'hidden'}"
+        aria-label="Cancel conference and reset row"
+      >cancel conference</button>
+    </div>
 
     <!-- 1. Day of Week Dropdown (Defaults to WED) -->
     <div class="day-select-wrap">
-      <select class="day-select" aria-label="Row ${slotNumber} Day of Week">
+      <select class="day-select" aria-label="Day of Week">
         ${dayOptionsHtml}
       </select>
       <svg class="day-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -287,7 +292,7 @@ function buildConferenceRowElement(slotNumber, entry) {
           class="time-input hour-input"
           placeholder="HH"
           value="${escapeHtml(hourVal)}"
-          aria-label="Row ${slotNumber} Hour (1 to 12)"
+          aria-label="Hour (1 to 12)"
         />
         <span class="time-colon">:</span>
         <input
@@ -297,14 +302,14 @@ function buildConferenceRowElement(slotNumber, entry) {
           class="time-input minute-input"
           placeholder="MM"
           value="${escapeHtml(minVal)}"
-          aria-label="Row ${slotNumber} Minute (00 to 59)"
+          aria-label="Minute (00 to 59)"
         />
       </div>
       <span class="field-error-hint time-error-hint hidden"></span>
     </div>
 
     <!-- 5. AM / PM Toggle Switch (Defaults to PM) -->
-    <div class="ampm-switch" role="group" aria-label="Row ${slotNumber} AM or PM">
+    <div class="ampm-switch" role="group" aria-label="AM or PM">
       <button type="button" class="ampm-btn ${ampmVal === 'AM' ? 'active' : ''}" data-ampm="AM">AM</button>
       <button type="button" class="ampm-btn ${ampmVal === 'PM' ? 'active' : ''}" data-ampm="PM">PM</button>
     </div>
@@ -316,14 +321,14 @@ function buildConferenceRowElement(slotNumber, entry) {
         class="name-input"
         placeholder="Student / Parent Name"
         value="${escapeHtml(nameVal)}"
-        aria-label="Row ${slotNumber} Conference Name"
+        aria-label="Conference Name"
       />
       <span class="field-error-hint name-error-hint hidden"></span>
     </div>
 
     <!-- 7. Modality Graphic Toggle (in-person on left, remote on right; defaults to in-person) -->
     <div class="modality-cell">
-      <div class="modality-switch" role="group" aria-label="Row ${slotNumber} Meeting Modality">
+      <div class="modality-switch" role="group" aria-label="Meeting Modality">
         <button type="button" class="modality-option ${modalityVal === 'in-person' ? 'active' : ''}" data-modality="in-person">in-person</button>
         <button type="button" class="modality-option ${modalityVal === 'remote' ? 'active' : ''}" data-modality="remote">remote</button>
       </div>
@@ -356,7 +361,36 @@ function buildConferenceRowElement(slotNumber, entry) {
   return row;
 }
 
-function attachRowEventListeners(row) {
+function isRowPopulated(row) {
+  const dayVal = row.querySelector('.day-select').value;
+  const hourVal = row.querySelector('.hour-input').value.trim();
+  const minVal = row.querySelector('.minute-input').value.trim();
+  const nameVal = row.querySelector('.name-input').value.trim();
+  const activeAmpm = row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
+  const activeModality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
+  const chkSpanish = row.querySelector('.chk-spanish').checked;
+  const chkPortuguese = row.querySelector('.chk-portuguese').checked;
+
+  return (
+    hourVal !== '' ||
+    minVal !== '' ||
+    nameVal !== '' ||
+    dayVal !== 'WED' ||
+    activeAmpm !== 'PM' ||
+    activeModality !== 'in-person' ||
+    chkSpanish ||
+    chkPortuguese
+  );
+}
+
+function syncCancelButtonVisibility(row) {
+  const cancelBtn = row.querySelector('.btn-cancel-conference');
+  if (!cancelBtn) return;
+  cancelBtn.classList.toggle('hidden', !isRowPopulated(row));
+}
+
+function resetConferenceRowToEmpty(row) {
+  const daySelect = row.querySelector('.day-select');
   const hourInput = row.querySelector('.hour-input');
   const minuteInput = row.querySelector('.minute-input');
   const nameInput = row.querySelector('.name-input');
@@ -365,19 +399,69 @@ function attachRowEventListeners(row) {
   const chkSpanish = row.querySelector('.chk-spanish');
   const chkPortuguese = row.querySelector('.chk-portuguese');
 
+  daySelect.value = 'WED';
+  hourInput.value = '';
+  minuteInput.value = '';
+  nameInput.value = '';
+
+  ampmBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.ampm === 'PM');
+  });
+
+  modalityBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.modality === 'in-person');
+  });
+
+  chkSpanish.checked = false;
+  chkPortuguese.checked = false;
+
+  // Clear all validation error states
+  hourInput.classList.remove('input-invalid');
+  minuteInput.classList.remove('input-invalid');
+  const timeErr = row.querySelector('.time-error-hint');
+  timeErr.textContent = '';
+  timeErr.classList.add('hidden');
+
+  clearRowValidationState(row);
+  syncCancelButtonVisibility(row);
+}
+
+function attachRowEventListeners(row) {
+  const cancelBtn = row.querySelector('.btn-cancel-conference');
+  const daySelect = row.querySelector('.day-select');
+  const hourInput = row.querySelector('.hour-input');
+  const minuteInput = row.querySelector('.minute-input');
+  const nameInput = row.querySelector('.name-input');
+  const ampmBtns = row.querySelectorAll('.ampm-btn');
+  const modalityBtns = row.querySelectorAll('.modality-option');
+  const chkSpanish = row.querySelector('.chk-spanish');
+  const chkPortuguese = row.querySelector('.chk-portuguese');
+
+  // Cancel conference button resets the row to empty immediately
+  cancelBtn.addEventListener('click', () => {
+    resetConferenceRowToEmpty(row);
+  });
+
+  daySelect.addEventListener('change', () => {
+    syncCancelButtonVisibility(row);
+  });
+
   // Hour input: digits only, validate 1–12 on blur/input
   hourInput.addEventListener('input', () => {
     hourInput.value = hourInput.value.replace(/\D/g, '');
     validateRowTime(row, false);
+    syncCancelButtonVisibility(row);
   });
   hourInput.addEventListener('blur', () => {
     validateRowTime(row, true);
+    syncCancelButtonVisibility(row);
   });
 
   // Minute input: digits only, auto-pad single digits on blur (e.g. '5' -> '05'), validate 00–59
   minuteInput.addEventListener('input', () => {
     minuteInput.value = minuteInput.value.replace(/\D/g, '');
     validateRowTime(row, false);
+    syncCancelButtonVisibility(row);
   });
   minuteInput.addEventListener('blur', () => {
     const raw = minuteInput.value.trim();
@@ -385,6 +469,7 @@ function attachRowEventListeners(row) {
       minuteInput.value = '0' + raw;
     }
     validateRowTime(row, true);
+    syncCancelButtonVisibility(row);
   });
 
   // AM / PM toggle
@@ -392,6 +477,7 @@ function attachRowEventListeners(row) {
     btn.addEventListener('click', () => {
       ampmBtns.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
+      syncCancelButtonVisibility(row);
     });
   });
 
@@ -408,11 +494,11 @@ function attachRowEventListeners(row) {
   nameInput.addEventListener('input', () => {
     stripAsterisks();
     clearRowValidationState(row);
-    updateTeacherSlotCounter();
+    syncCancelButtonVisibility(row);
   });
   nameInput.addEventListener('blur', () => {
     nameInput.value = nameInput.value.replace(/\*/g, '').trim();
-    updateTeacherSlotCounter();
+    syncCancelButtonVisibility(row);
   });
 
   // Graphic Modality switch
@@ -420,6 +506,7 @@ function attachRowEventListeners(row) {
     btn.addEventListener('click', () => {
       modalityBtns.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
+      syncCancelButtonVisibility(row);
     });
   });
 
@@ -428,11 +515,13 @@ function attachRowEventListeners(row) {
     if (chkSpanish.checked) {
       chkPortuguese.checked = false;
     }
+    syncCancelButtonVisibility(row);
   });
   chkPortuguese.addEventListener('change', () => {
     if (chkPortuguese.checked) {
       chkSpanish.checked = false;
     }
+    syncCancelButtonVisibility(row);
   });
 }
 
@@ -492,16 +581,6 @@ function clearRowValidationState(row) {
   nameErr.classList.add('hidden');
 }
 
-function updateTeacherSlotCounter() {
-  const rows = document.querySelectorAll('#teacher-rows-container .conference-row');
-  let filled = 0;
-  rows.forEach((row) => {
-    const name = row.querySelector('.name-input').value.trim();
-    if (name !== '') filled++;
-  });
-  document.getElementById('teacher-slot-counter').textContent = `${filled} / ${CONSTANTS.MAX_SLOTS} Scheduled`;
-}
-
 function bindTeacherFormEvents() {
   const form = document.getElementById('teacher-schedule-form');
   form.addEventListener('submit', async (e) => {
@@ -536,7 +615,7 @@ function bindTeacherFormEvents() {
 
       const isCompletelyBlank = hStr === '' && mStr === '' && nameStr === '';
       if (isCompletelyBlank) {
-        validateRowTime(row, false);
+        resetConferenceRowToEmpty(row);
         return; // Empty / canceled row — omitted so column compacts upward
       }
 
@@ -557,7 +636,7 @@ function bindTeacherFormEvents() {
       if (nameStr === '') {
         rowOk = false;
         nameInput.classList.add('input-invalid');
-        nameError.textContent = 'Enter a name or clear the time to remove this row';
+        nameError.textContent = 'Enter a name or click "cancel conference" to remove this row';
         nameError.classList.remove('hidden');
       }
 
@@ -590,7 +669,7 @@ function bindTeacherFormEvents() {
 
     if (hasValidationErrors) {
       showStatusBanner(
-        'Please complete all highlighted rows (valid Hour 1–12, Minutes 00–59, and Name) or clear all fields in a row to remove it.',
+        'Please complete all highlighted rows (valid Hour 1–12, Minutes 00–59, and Name) or click "cancel conference" to remove a row.',
         'error'
       );
       if (firstInvalidRow) {
@@ -841,8 +920,6 @@ function renderMainOfficeScreen() {
 
   document.getElementById('kpi-total-scheduled').textContent = String(totalScheduled);
   document.getElementById('kpi-completion-pct').textContent = `${completionPct}%`;
-  document.getElementById('kpi-completion-ratio').textContent =
-    `${totalScheduled} / ${denominator} target conferences (${targetPerTeacher} per teacher)`;
 
   document.getElementById('kpi-total-inperson').textContent = String(inPersonAll.length);
   document.getElementById('kpi-remote-subtext').textContent =
