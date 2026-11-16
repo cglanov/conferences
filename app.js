@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
- * Frontend Controller (app.js) — Specification v2.1
+ * Frontend Controller (app.js) — Specification v2.2
  * ============================================================================
  */
 
@@ -11,6 +11,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz4gNYvyxCXV5AQ
 const CONSTANTS = {
   MAX_SLOTS: 24,
   TARGET_PER_TEACHER: 22,
+  APPOINTMENT_DURATION_MINUTES: 20,
   DAYS: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
   DAY_LABELS: {
     MON: 'Monday',
@@ -27,12 +28,14 @@ const state = {
   schedules: {},
   spanish: [],
   portuguese: [],
+  translators: [], // Array of { rowIndex, name, language: 'spanish'|'portuguese', appointments: [] }
   meta: {
     maxSlotsPerTeacher: CONSTANTS.MAX_SLOTS,
     targetConferencesPerTeacher: CONSTANTS.TARGET_PER_TEACHER
   },
   activeScreen: 'screen-home',
   selectedTeacher: null,
+  selectedTranslatorKey: null, // `${rowIndex}::${name}`
   selectedOtherStaffTeacher: null
 };
 
@@ -43,7 +46,8 @@ const state = {
 document.addEventListener('DOMContentLoaded', () => {
   bindNavigationEvents();
   bindTeacherFormEvents();
-  bindTranslatorFormEvents();
+  bindTranslatorWorkflowEvents();
+  bindConfirmModalEvents();
   bindPrintButtons();
   loadAllData();
 });
@@ -60,7 +64,7 @@ function bindNavigationEvents() {
 
   document.getElementById('nav-translators-btn').addEventListener('click', () => {
     clearStatusBanner();
-    renderTranslatorsScreen();
+    renderTranslatorsHomeScreen();
     navigateTo('screen-translators');
   });
 
@@ -92,6 +96,61 @@ function navigateTo(screenId) {
   }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ============================================================================
+// CONFIRMATION MODAL DIALOG
+// ============================================================================
+
+let activeModalResolver = null;
+
+function bindConfirmModalEvents() {
+  const modal = document.getElementById('confirm-modal');
+  const cancelBtn = document.getElementById('confirm-modal-cancel-btn');
+  const acceptBtn = document.getElementById('confirm-modal-accept-btn');
+
+  const closeWith = (confirmed) => {
+    modal.classList.add('hidden');
+    if (activeModalResolver) {
+      const resolve = activeModalResolver;
+      activeModalResolver = null;
+      resolve(confirmed);
+    }
+  };
+
+  cancelBtn.addEventListener('click', () => closeWith(false));
+  acceptBtn.addEventListener('click', () => closeWith(true));
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeWith(false);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeWith(false);
+    }
+  });
+}
+
+function showConfirmDialog({ title, message, confirmLabel = 'Confirm', variant = 'primary' }) {
+  const modal = document.getElementById('confirm-modal');
+  const titleEl = document.getElementById('confirm-modal-title');
+  const msgEl = document.getElementById('confirm-modal-message');
+  const acceptBtn = document.getElementById('confirm-modal-accept-btn');
+
+  titleEl.textContent = title;
+  msgEl.textContent = message;
+  acceptBtn.textContent = confirmLabel;
+  acceptBtn.className = variant === 'danger' ? 'btn-modal-danger' : 'btn-modal-confirm';
+
+  modal.classList.remove('hidden');
+  acceptBtn.focus();
+
+  return new Promise((resolve) => {
+    activeModalResolver = resolve;
+  });
 }
 
 // ============================================================================
@@ -171,11 +230,77 @@ async function postToAppsScript(payload) {
   return result;
 }
 
+function normalizeTranslatorsFromServer(rawTranslators) {
+  if (!Array.isArray(rawTranslators)) return [];
+
+  return rawTranslators
+    .map((entry, idx) => {
+      // Supports either structured objects from Apps Script or raw spreadsheet row arrays
+      if (Array.isArray(entry)) {
+        const name = String(entry[0] || '').trim();
+        const language = String(entry[1] || '').trim().toLowerCase();
+        if (!name || (language !== 'spanish' && language !== 'portuguese')) return null;
+
+        const appointments = [];
+        for (let c = 2; c < entry.length; c++) {
+          const cellVal = String(entry[c] || '').trim();
+          if (cellVal) {
+            appointments.push(parseAppointmentCsvString(cellVal, c + 1));
+          }
+        }
+        return {
+          rowIndex: idx + 1,
+          name,
+          language,
+          appointments
+        };
+      }
+
+      const name = String(entry.name || '').trim();
+      const language = String(entry.language || '').trim().toLowerCase();
+      if (!name || (language !== 'spanish' && language !== 'portuguese')) return null;
+
+      const rawAppts = Array.isArray(entry.appointments) ? entry.appointments : [];
+      const appointments = rawAppts
+        .map((appt, aIdx) => {
+          if (typeof appt === 'string') {
+            return appt.trim() ? parseAppointmentCsvString(appt.trim(), aIdx + 3) : null;
+          }
+          if (appt && typeof appt === 'object') {
+            if (appt.raw) {
+              return parseAppointmentCsvString(String(appt.raw), appt.colIndex || aIdx + 3);
+            }
+            return {
+              raw: formatAppointmentCsvString(appt),
+              colIndex: appt.colIndex || aIdx + 3,
+              name: String(appt.name || '').trim(),
+              teacher: String(appt.teacher || '').trim(),
+              modality: normalizeModality(appt.modality),
+              day: String(appt.day || '').trim().toUpperCase(),
+              time: String(appt.time || '').trim()
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      return {
+        rowIndex: entry.rowIndex || idx + 1,
+        name,
+        language,
+        appointments
+      };
+    })
+    .filter(Boolean);
+}
+
 function applyServerData(data) {
   state.teachers = Array.isArray(data.teachers) ? data.teachers : [];
   state.schedules = data.schedules || {};
   state.spanish = Array.isArray(data.spanish) ? data.spanish : [];
   state.portuguese = Array.isArray(data.portuguese) ? data.portuguese : [];
+  state.translators = normalizeTranslatorsFromServer(data.translators);
+
   if (data.meta) {
     state.meta = { ...state.meta, ...data.meta };
   }
@@ -186,7 +311,9 @@ function applyServerData(data) {
   if (state.activeScreen === 'screen-teacher' && state.selectedTeacher) {
     openTeacherScreen(state.selectedTeacher);
   } else if (state.activeScreen === 'screen-translators') {
-    renderTranslatorsScreen();
+    renderTranslatorsHomeScreen();
+  } else if (state.activeScreen === 'screen-translator-detail') {
+    renderTranslatorDetailScreen();
   } else if (state.activeScreen === 'screen-other-staff') {
     renderOtherStaffScreen();
   } else if (state.activeScreen === 'screen-main-office') {
@@ -241,6 +368,8 @@ function openTeacherScreen(teacherName) {
     const rowEl = buildConferenceRowElement(entry);
     container.appendChild(rowEl);
   }
+
+  refreshAllTeacherRowsTranslatorAvailability();
 }
 
 function buildConferenceRowElement(entry) {
@@ -256,7 +385,6 @@ function buildConferenceRowElement(entry) {
   const row = document.createElement('div');
   row.className = 'conference-row';
 
-  // Build Day options
   const dayOptionsHtml = CONSTANTS.DAYS.map((d) => {
     const selected = d === dayVal ? 'selected' : '';
     return `<option value="${d}" ${selected}>${d}</option>`;
@@ -334,10 +462,10 @@ function buildConferenceRowElement(entry) {
       </div>
     </div>
 
-    <!-- 8. Mutually Exclusive Translator Checkboxes -->
+    <!-- 8. Mutually Exclusive Translator Checkboxes / Availability Text -->
     <div class="translator-cell">
       <div class="translator-checkbox-group">
-        <label class="checkbox-label">
+        <label class="checkbox-label spanish-option-label">
           <input
             type="checkbox"
             class="chk-spanish"
@@ -345,7 +473,9 @@ function buildConferenceRowElement(entry) {
           />
           <span>Spanish Translator</span>
         </label>
-        <label class="checkbox-label">
+        <span class="translator-unavailable-text spanish-unavailable-msg hidden">no spanish translation available at this timeslot</span>
+
+        <label class="checkbox-label portuguese-option-label">
           <input
             type="checkbox"
             class="chk-portuguese"
@@ -353,12 +483,167 @@ function buildConferenceRowElement(entry) {
           />
           <span>Portuguese Translator</span>
         </label>
+        <span class="translator-unavailable-text portuguese-unavailable-msg hidden">no portuguese translation available at this time slot</span>
       </div>
     </div>
   `;
 
   attachRowEventListeners(row);
   return row;
+}
+
+function getRowTimeSlotInfo(row) {
+  const day = row.querySelector('.day-select').value;
+  const hStr = row.querySelector('.hour-input').value.trim();
+  const mStr = row.querySelector('.minute-input').value.trim();
+  const ampm = row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
+
+  if (hStr === '' || mStr === '') {
+    return { isValid: false, day, startMinutes: null };
+  }
+
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (isNaN(h) || h < 1 || h > 12 || isNaN(m) || m < 0 || m > 59) {
+    return { isValid: false, day, startMinutes: null };
+  }
+
+  const formatted = `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+  return {
+    isValid: true,
+    day,
+    startMinutes: parseTimeStringToMinutes(formatted)
+  };
+}
+
+function doTimeslotsOverlap(dayA, startMinA, dayB, startMinB) {
+  if (!dayA || !dayB || dayA !== dayB) return false;
+  if (startMinA === null || startMinB === null || startMinA >= 9000 || startMinB >= 9000) {
+    return false;
+  }
+  // Scheduled times cover the 20 minutes after the recorded start time: [start, start + 20)
+  return Math.abs(startMinA - startMinB) < CONSTANTS.APPOINTMENT_DURATION_MINUTES;
+}
+
+function isTranslatorAvailableForRow(targetRow, language) {
+  const translatorsForLang = state.translators.filter((t) => t.language === language);
+  const totalTranslators = translatorsForLang.length;
+
+  // If no translators exist for this language in the 'translators' tab, none are ever available
+  if (totalTranslators === 0) {
+    return false;
+  }
+
+  const slot = getRowTimeSlotInfo(targetRow);
+  // Before a valid hour & minute are entered, allow selecting checkboxes since translators exist
+  if (!slot.isValid) {
+    return true;
+  }
+
+  // 1. Count translators of this language who are NOT already booked via claimed appointments at this timeslot
+  let freeTranslatorsCount = 0;
+  translatorsForLang.forEach((translator) => {
+    const hasOverlappingClaim = translator.appointments.some((appt) => {
+      const apptStart = parseTimeStringToMinutes(appt.time);
+      return doTimeslotsOverlap(slot.day, slot.startMinutes, appt.day, apptStart);
+    });
+    if (!hasOverlappingClaim) {
+      freeTranslatorsCount++;
+    }
+  });
+
+  if (freeTranslatorsCount <= 0) {
+    return false;
+  }
+
+  // 2. Also subtract unclaimed conferences already scheduled at this overlapping timeslot
+  //    so teachers cannot overbook more simultaneous conferences than available translators.
+  const claimedKeys = getClaimedConferenceKeySet();
+  const targetLangLabel = language === 'spanish' ? 'spanish translator' : 'portuguese translator';
+  let overlappingUnclaimedDemand = 0;
+
+  // Check other teachers' saved schedules
+  state.teachers.forEach((teacherName) => {
+    if (teacherName === state.selectedTeacher) return;
+    const list = state.schedules[teacherName] || [];
+    list.forEach((conf) => {
+      if (conf.translator !== targetLangLabel) return;
+      const confKey = buildConferenceMatchKey({ ...conf, teacher: teacherName });
+      if (claimedKeys.has(confKey)) return; // Already counted via translator's claimed appointments
+
+      const confStart = parseTimeStringToMinutes(conf.time);
+      if (doTimeslotsOverlap(slot.day, slot.startMinutes, conf.day, confStart)) {
+        overlappingUnclaimedDemand++;
+      }
+    });
+  });
+
+  // Check other rows currently on this teacher's schedule form
+  const allRows = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
+  allRows.forEach((otherRow) => {
+    if (otherRow === targetRow) return;
+    const chk = otherRow.querySelector(language === 'spanish' ? '.chk-spanish' : '.chk-portuguese');
+    if (!chk || !chk.checked) return;
+
+    const otherSlot = getRowTimeSlotInfo(otherRow);
+    if (!otherSlot.isValid) return;
+
+    const otherName = otherRow.querySelector('.name-input').value.trim();
+    const otherHour = parseInt(otherRow.querySelector('.hour-input').value.trim(), 10);
+    const otherMin = otherRow.querySelector('.minute-input').value.trim().padStart(2, '0');
+    const otherAmpm = otherRow.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
+    const otherKey = buildConferenceMatchKey({
+      day: otherSlot.day,
+      time: `${otherHour}:${otherMin} ${otherAmpm}`,
+      teacher: state.selectedTeacher,
+      name: otherName
+    });
+    if (claimedKeys.has(otherKey)) return;
+
+    if (doTimeslotsOverlap(slot.day, slot.startMinutes, otherSlot.day, otherSlot.startMinutes)) {
+      overlappingUnclaimedDemand++;
+    }
+  });
+
+  return freeTranslatorsCount - overlappingUnclaimedDemand > 0;
+}
+
+function updateRowTranslatorAvailability(row) {
+  const spanishAvailable = isTranslatorAvailableForRow(row, 'spanish');
+  const portugueseAvailable = isTranslatorAvailableForRow(row, 'portuguese');
+
+  const spanishLabel = row.querySelector('.spanish-option-label');
+  const chkSpanish = row.querySelector('.chk-spanish');
+  const spanishMsg = row.querySelector('.spanish-unavailable-msg');
+
+  const portugueseLabel = row.querySelector('.portuguese-option-label');
+  const chkPortuguese = row.querySelector('.chk-portuguese');
+  const portugueseMsg = row.querySelector('.portuguese-unavailable-msg');
+
+  if (spanishAvailable) {
+    spanishLabel.classList.remove('hidden');
+    spanishMsg.classList.add('hidden');
+  } else {
+    chkSpanish.checked = false;
+    spanishLabel.classList.add('hidden');
+    spanishMsg.classList.remove('hidden');
+  }
+
+  if (portugueseAvailable) {
+    portugueseLabel.classList.remove('hidden');
+    portugueseMsg.classList.add('hidden');
+  } else {
+    chkPortuguese.checked = false;
+    portugueseLabel.classList.add('hidden');
+    portugueseMsg.classList.remove('hidden');
+  }
+
+  syncCancelButtonVisibility(row);
+}
+
+function refreshAllTeacherRowsTranslatorAvailability() {
+  const rows = document.querySelectorAll('#teacher-rows-container .conference-row');
+  rows.forEach((row) => updateRowTranslatorAvailability(row));
 }
 
 function isRowPopulated(row) {
@@ -415,7 +700,6 @@ function resetConferenceRowToEmpty(row) {
   chkSpanish.checked = false;
   chkPortuguese.checked = false;
 
-  // Clear all validation error states
   hourInput.classList.remove('input-invalid');
   minuteInput.classList.remove('input-invalid');
   const timeErr = row.querySelector('.time-error-hint');
@@ -423,7 +707,7 @@ function resetConferenceRowToEmpty(row) {
   timeErr.classList.add('hidden');
 
   clearRowValidationState(row);
-  syncCancelButtonVisibility(row);
+  refreshAllTeacherRowsTranslatorAvailability();
 }
 
 function attachRowEventListeners(row) {
@@ -437,31 +721,28 @@ function attachRowEventListeners(row) {
   const chkSpanish = row.querySelector('.chk-spanish');
   const chkPortuguese = row.querySelector('.chk-portuguese');
 
-  // Cancel conference button resets the row to empty immediately
   cancelBtn.addEventListener('click', () => {
     resetConferenceRowToEmpty(row);
   });
 
   daySelect.addEventListener('change', () => {
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
 
-  // Hour input: digits only, validate 1–12 on blur/input
   hourInput.addEventListener('input', () => {
     hourInput.value = hourInput.value.replace(/\D/g, '');
     validateRowTime(row, false);
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
   hourInput.addEventListener('blur', () => {
     validateRowTime(row, true);
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
 
-  // Minute input: digits only, auto-pad single digits on blur (e.g. '5' -> '05'), validate 00–59
   minuteInput.addEventListener('input', () => {
     minuteInput.value = minuteInput.value.replace(/\D/g, '');
     validateRowTime(row, false);
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
   minuteInput.addEventListener('blur', () => {
     const raw = minuteInput.value.trim();
@@ -469,19 +750,17 @@ function attachRowEventListeners(row) {
       minuteInput.value = '0' + raw;
     }
     validateRowTime(row, true);
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
 
-  // AM / PM toggle
   ampmBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       ampmBtns.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      syncCancelButtonVisibility(row);
+      refreshAllTeacherRowsTranslatorAvailability();
     });
   });
 
-  // Name input: strip '*' characters in real time and on blur
   const stripAsterisks = () => {
     if (nameInput.value.includes('*')) {
       const cursor = nameInput.selectionStart;
@@ -501,7 +780,6 @@ function attachRowEventListeners(row) {
     syncCancelButtonVisibility(row);
   });
 
-  // Graphic Modality switch
   modalityBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       modalityBtns.forEach((b) => b.classList.remove('active'));
@@ -510,18 +788,17 @@ function attachRowEventListeners(row) {
     });
   });
 
-  // Mutually exclusive translator checkboxes
   chkSpanish.addEventListener('change', () => {
     if (chkSpanish.checked) {
       chkPortuguese.checked = false;
     }
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
   chkPortuguese.addEventListener('change', () => {
     if (chkPortuguese.checked) {
       chkSpanish.checked = false;
     }
-    syncCancelButtonVisibility(row);
+    refreshAllTeacherRowsTranslatorAvailability();
   });
 }
 
@@ -603,7 +880,6 @@ function bindTeacherFormEvents() {
       const nameInput = row.querySelector('.name-input');
       const nameError = row.querySelector('.name-error-hint');
 
-      // Normalize minute padding and strip '*' prior to validation
       if (/^\d$/.test(minuteInput.value.trim())) {
         minuteInput.value = '0' + minuteInput.value.trim();
       }
@@ -616,7 +892,7 @@ function bindTeacherFormEvents() {
       const isCompletelyBlank = hStr === '' && mStr === '' && nameStr === '';
       if (isCompletelyBlank) {
         resetConferenceRowToEmpty(row);
-        return; // Empty / canceled row — omitted so column compacts upward
+        return;
       }
 
       const timeOk = validateRowTime(row, true);
@@ -702,105 +978,419 @@ function bindTeacherFormEvents() {
 }
 
 // ============================================================================
-// SCREEN 3: TRANSLATORS SCREEN
+// SCREEN 3A, 3B, 3C: TRANSLATORS WORKFLOW
 // ============================================================================
 
-function renderTranslatorsScreen() {
-  const spanishSorted = sortConferencesChronologically(state.spanish);
-  const portugueseSorted = sortConferencesChronologically(state.portuguese);
-
-  document.getElementById('spanish-count-badge').textContent = String(spanishSorted.length);
-  document.getElementById('portuguese-count-badge').textContent = String(portugueseSorted.length);
-
-  renderTranslatorPaneList('spanish-requests-list', spanishSorted, 'spanish');
-  renderTranslatorPaneList('portuguese-requests-list', portugueseSorted, 'portuguese');
+function getTranslatorKey(translator) {
+  return `${translator.rowIndex}::${translator.name}`;
 }
 
-function renderTranslatorPaneList(containerId, items, languageKey) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
+function getSelectedTranslator() {
+  if (!state.selectedTranslatorKey) return null;
+  return state.translators.find((t) => getTranslatorKey(t) === state.selectedTranslatorKey) || null;
+}
 
-  if (items.length === 0) {
-    container.innerHTML = `<div class="empty-state-box">No ${languageKey} translation requests scheduled.</div>`;
+function formatAppointmentCsvString(conf) {
+  const clean = (val) => String(val || '').replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+  return [
+    clean(conf.name),
+    clean(conf.teacher),
+    clean(normalizeModality(conf.modality)),
+    clean(String(conf.day || '').toUpperCase()),
+    clean(conf.time)
+  ].join(', ');
+}
+
+function parseAppointmentCsvString(rawStr, colIndex = 3) {
+  const parts = String(rawStr || '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  // Expected format: Conference Name, Teacher Name, Modality, Day, Time
+  if (parts.length >= 5) {
+    const time = parts[parts.length - 1];
+    const day = parts[parts.length - 2].toUpperCase();
+    const modality = normalizeModality(parts[parts.length - 3]);
+    const teacher = parts[parts.length - 4];
+    const name = parts.slice(0, parts.length - 4).join(', ');
+    return { raw: rawStr, colIndex, name, teacher, modality, day, time };
+  }
+
+  // Fallback if 4 comma-separated tokens (Name, Teacher, Modality, Time)
+  if (parts.length === 4) {
+    return {
+      raw: rawStr,
+      colIndex,
+      name: parts[0],
+      teacher: parts[1],
+      modality: normalizeModality(parts[2]),
+      day: '',
+      time: parts[3]
+    };
+  }
+
+  return {
+    raw: rawStr,
+    colIndex,
+    name: rawStr,
+    teacher: '',
+    modality: 'in-person',
+    day: '',
+    time: ''
+  };
+}
+
+function normalizeModality(val) {
+  return String(val || '').trim().toLowerCase() === 'remote' ? 'remote' : 'in-person';
+}
+
+function buildConferenceMatchKey(item) {
+  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return `${norm(item.day)}|${norm(item.time)}|${norm(item.teacher)}|${norm(item.name)}`;
+}
+
+function getClaimedConferenceKeySet() {
+  const set = new Set();
+  state.translators.forEach((translator) => {
+    translator.appointments.forEach((appt) => {
+      set.add(buildConferenceMatchKey(appt));
+    });
+  });
+  return set;
+}
+
+function bindTranslatorWorkflowEvents() {
+  // Open Add Translator screen
+  document.getElementById('open-add-translator-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    document.getElementById('add-translator-form').reset();
+    navigateTo('screen-add-translator');
+    document.getElementById('new-translator-name').focus();
+  });
+
+  // Back buttons within Translator sub-screens
+  document.getElementById('back-to-translators-from-add-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    renderTranslatorsHomeScreen();
+    navigateTo('screen-translators');
+  });
+
+  document.getElementById('cancel-add-translator-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    renderTranslatorsHomeScreen();
+    navigateTo('screen-translators');
+  });
+
+  document.getElementById('back-to-translators-from-detail-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    state.selectedTranslatorKey = null;
+    renderTranslatorsHomeScreen();
+    navigateTo('screen-translators');
+  });
+
+  // Add Translator Form Submission
+  document.getElementById('add-translator-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearStatusBanner();
+
+    const nameInput = document.getElementById('new-translator-name');
+    const name = nameInput.value.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
+    const langRadio = document.querySelector('input[name="translator-language"]:checked');
+    const language = langRadio ? langRadio.value.toLowerCase() : '';
+
+    if (!name) {
+      showStatusBanner('Please enter a name for the translator.', 'error');
+      nameInput.focus();
+      return;
+    }
+
+    if (language !== 'spanish' && language !== 'portuguese') {
+      showStatusBanner('Please select either Spanish or Portuguese.', 'error');
+      return;
+    }
+
+    const submitBtn = document.getElementById('save-new-translator-btn');
+    submitBtn.disabled = true;
+    setLoading(true, `Adding ${name} to translators...`);
+
+    try {
+      const result = await postToAppsScript({
+        action: 'addTranslator',
+        name,
+        language
+      });
+
+      // Optimistically update local state if backend didn't echo full data
+      if (!result.data) {
+        state.translators.push({
+          rowIndex: state.translators.length + 1,
+          name,
+          language,
+          appointments: []
+        });
+      }
+
+      renderTranslatorsHomeScreen();
+      navigateTo('screen-translators');
+      showStatusBanner(result.message || `${name} (${capitalize(language)}) added.`, 'success');
+    } catch (err) {
+      showStatusBanner(`Error adding translator: ${err.message}`, 'error');
+    } finally {
+      submitBtn.disabled = false;
+      setLoading(false);
+    }
+  });
+}
+
+function renderTranslatorsHomeScreen() {
+  const grid = document.getElementById('translators-grid');
+  grid.innerHTML = '';
+
+  if (state.translators.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state-box">
+        No translators found in the <strong>translators</strong> tab yet. Click <strong>Add translator</strong> above to add one.
+      </div>
+    `;
     return;
   }
 
-  items.forEach((item) => {
-    const card = document.createElement('div');
-    card.className = 'translator-entry-card';
+  state.translators.forEach((translator) => {
+    const unit = document.createElement('div');
+    unit.className = 'translator-unit-card';
 
-    const modalityLabel = item.modality === 'remote' ? 'Remote' : 'In-Person';
-    const modalityClass = item.modality === 'remote' ? 'remote' : 'in-person';
+    const langLabel = capitalize(translator.language);
+    const langClass = translator.language === 'portuguese' ? 'lang-portuguese' : 'lang-spanish';
+    const apptCount = translator.appointments.length;
 
-    card.innerHTML = `
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = 'translator-select-btn';
+    selectBtn.innerHTML = `
+      <span class="translator-btn-name">${escapeHtml(translator.name)}</span>
+      <span class="translator-btn-meta">
+        <span class="translator-lang-pill ${langClass}">${escapeHtml(langLabel)}</span>
+        <span class="translator-appt-count">${apptCount} ${apptCount === 1 ? 'appointment' : 'appointments'}</span>
+      </span>
+    `;
+    selectBtn.addEventListener('click', () => {
+      clearStatusBanner();
+      state.selectedTranslatorKey = getTranslatorKey(translator);
+      renderTranslatorDetailScreen();
+      navigateTo('screen-translator-detail');
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'btn-delete-translator';
+    deleteBtn.textContent = 'delete translator';
+    deleteBtn.addEventListener('click', () => {
+      handleDeleteTranslator(translator);
+    });
+
+    unit.appendChild(selectBtn);
+    unit.appendChild(deleteBtn);
+    grid.appendChild(unit);
+  });
+}
+
+async function handleDeleteTranslator(translator) {
+  clearStatusBanner();
+
+  const confirmed = await showConfirmDialog({
+    title: `Delete ${translator.name}?`,
+    message: `Deleting ${translator.name} will remove them and all their scheduled appointments from the system. Do you want to continue?`,
+    confirmLabel: 'Delete Translator',
+    variant: 'danger'
+  });
+
+  if (!confirmed) return;
+
+  setLoading(true, `Deleting ${translator.name}...`);
+  try {
+    const result = await postToAppsScript({
+      action: 'deleteTranslator',
+      rowIndex: translator.rowIndex,
+      name: translator.name,
+      language: translator.language
+    });
+
+    if (!result.data) {
+      state.translators = state.translators.filter(
+        (t) => getTranslatorKey(t) !== getTranslatorKey(translator)
+      );
+      renderTranslatorsHomeScreen();
+    }
+
+    showStatusBanner(
+      result.message || `${translator.name} and their scheduled appointments have been removed.`,
+      'success'
+    );
+  } catch (err) {
+    showStatusBanner(`Error deleting translator: ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderTranslatorDetailScreen() {
+  const translator = getSelectedTranslator();
+  if (!translator) {
+    renderTranslatorsHomeScreen();
+    navigateTo('screen-translators');
+    return;
+  }
+
+  const langLabel = capitalize(translator.language);
+  document.getElementById('translator-detail-lang-badge').textContent = `${langLabel} Translator`;
+  document.getElementById('translator-detail-title').textContent = translator.name;
+  document.getElementById('unclaimed-conferences-heading').textContent =
+    `Unclaimed Conferences Needing a ${langLabel} Translator`;
+  document.getElementById('claimed-appointments-heading').textContent =
+    `${translator.name}'s Claimed Appointments`;
+
+  // Gather all conferences needing this translator's language
+  const allForLanguage = translator.language === 'portuguese' ? state.portuguese : state.spanish;
+  const claimedKeys = getClaimedConferenceKeySet();
+
+  const unclaimed = sortConferencesChronologically(
+    allForLanguage.filter((conf) => !claimedKeys.has(buildConferenceMatchKey(conf)))
+  );
+
+  document.getElementById('unclaimed-count-badge').textContent = String(unclaimed.length);
+  document.getElementById('claimed-count-badge').textContent = String(translator.appointments.length);
+
+  renderUnclaimedConferenceButtons(translator, unclaimed);
+  renderClaimedAppointmentsList(translator);
+}
+
+function renderUnclaimedConferenceButtons(translator, unclaimedConferences) {
+  const container = document.getElementById('unclaimed-conferences-list');
+  container.innerHTML = '';
+
+  if (unclaimedConferences.length === 0) {
+    container.innerHTML = `<div class="empty-state-box">All ${capitalize(translator.language)} translation requests have been claimed!</div>`;
+    return;
+  }
+
+  unclaimedConferences.forEach((conf) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'unclaimed-conf-btn';
+
+    const modalityLabel = normalizeModality(conf.modality) === 'remote' ? 'Remote' : 'In-Person';
+    const modalityClass = normalizeModality(conf.modality) === 'remote' ? 'remote' : 'in-person';
+
+    // Check if this translator already has an overlapping appointment within 20 minutes
+    const confStart = parseTimeStringToMinutes(conf.time);
+    const hasConflict = translator.appointments.some((appt) =>
+      doTimeslotsOverlap(conf.day, confStart, appt.day, parseTimeStringToMinutes(appt.time))
+    );
+
+    btn.innerHTML = `
       <div class="translator-card-top">
-        <h4 class="translator-conf-name">${escapeHtml(item.name)}</h4>
+        <span class="translator-conf-name">${escapeHtml(conf.name)}</span>
         <span class="modality-badge ${modalityClass}">${modalityLabel}</span>
       </div>
       <div class="translator-meta-row">
-        <span class="translator-meta-item"><strong>When:</strong> ${escapeHtml(item.day)} &mdash; ${escapeHtml(item.time)}</span>
-        <span class="translator-meta-item"><strong>Teacher:</strong> ${escapeHtml(item.teacher)}</span>
+        <span class="translator-meta-item"><strong>Teacher:</strong> ${escapeHtml(conf.teacher)}</span>
+        <span class="translator-meta-item"><strong>Time Slot:</strong> ${escapeHtml(conf.day)} &mdash; ${escapeHtml(conf.time)}</span>
       </div>
-      <div class="translator-note-row">
-        <input
-          type="text"
-          class="translator-note-input"
-          data-lang="${languageKey}"
-          data-composite-key="${escapeHtml(item.compositeKey)}"
-          placeholder="Assigned translator / notes..."
-          value="${escapeHtml(item.notes || '')}"
-          aria-label="Translator assignment for ${escapeHtml(item.name)}"
-        />
+      ${hasConflict ? '<div class="conflict-warning-tag">Overlaps with one of your existing 20-minute appointments</div>' : ''}
+    `;
+
+    btn.addEventListener('click', () => {
+      handleClaimConferenceClick(translator, conf, hasConflict);
+    });
+
+    container.appendChild(btn);
+  });
+}
+
+async function handleClaimConferenceClick(translator, conf, hasConflict) {
+  clearStatusBanner();
+
+  const modalityLabel = normalizeModality(conf.modality) === 'remote' ? 'remote' : 'in-person';
+  const conflictNote = hasConflict
+    ? ' Note: This overlaps within 20 minutes of one of your existing appointments.'
+    : '';
+
+  const confirmed = await showConfirmDialog({
+    title: 'Claim Conference?',
+    message: `Do you want to claim "${conf.name}" with ${conf.teacher} (${modalityLabel}) on ${conf.day} at ${conf.time} as one of ${translator.name}'s appointments?${conflictNote}`,
+    confirmLabel: 'Claim Appointment',
+    variant: 'primary'
+  });
+
+  if (!confirmed) return;
+
+  const appointmentString = formatAppointmentCsvString(conf);
+
+  setLoading(true, `Claiming "${conf.name}" for ${translator.name}...`);
+  try {
+    const result = await postToAppsScript({
+      action: 'claimConference',
+      rowIndex: translator.rowIndex,
+      translatorName: translator.name,
+      language: translator.language,
+      appointmentString,
+      conference: {
+        day: conf.day,
+        time: conf.time,
+        name: conf.name,
+        teacher: conf.teacher,
+        modality: normalizeModality(conf.modality),
+        compositeKey: conf.compositeKey || ''
+      }
+    });
+
+    if (!result.data) {
+      translator.appointments.push(parseAppointmentCsvString(appointmentString));
+      renderTranslatorDetailScreen();
+    }
+
+    showStatusBanner(
+      result.message || `Claimed "${conf.name}" (${conf.day} ${conf.time}) for ${translator.name}.`,
+      'success'
+    );
+  } catch (err) {
+    showStatusBanner(`Error claiming conference: ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderClaimedAppointmentsList(translator) {
+  const container = document.getElementById('claimed-appointments-list');
+  container.innerHTML = '';
+
+  if (translator.appointments.length === 0) {
+    container.innerHTML = '<div class="empty-state-box">No appointments claimed yet.</div>';
+    return;
+  }
+
+  const sorted = sortConferencesChronologically(translator.appointments);
+
+  sorted.forEach((appt) => {
+    const card = document.createElement('div');
+    card.className = 'translator-entry-card claimed-appt-card';
+
+    const modalityLabel = normalizeModality(appt.modality) === 'remote' ? 'Remote' : 'In-Person';
+    const modalityClass = normalizeModality(appt.modality) === 'remote' ? 'remote' : 'in-person';
+
+    card.innerHTML = `
+      <div class="translator-card-top">
+        <h4 class="translator-conf-name">${escapeHtml(appt.name)}</h4>
+        <span class="modality-badge ${modalityClass}">${modalityLabel}</span>
+      </div>
+      <div class="translator-meta-row">
+        ${appt.teacher ? `<span class="translator-meta-item"><strong>Teacher:</strong> ${escapeHtml(appt.teacher)}</span>` : ''}
+        <span class="translator-meta-item"><strong>Time Slot:</strong> ${escapeHtml(appt.day ? `${appt.day} — ${appt.time}` : appt.time)}</span>
       </div>
     `;
 
     container.appendChild(card);
-  });
-}
-
-function bindTranslatorFormEvents() {
-  const form = document.getElementById('translators-form');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearStatusBanner();
-
-    const spanishUpdates = [];
-    const portugueseUpdates = [];
-
-    document.querySelectorAll('.translator-note-input').forEach((input) => {
-      const lang = input.dataset.lang;
-      const compositeKey = input.dataset.compositeKey;
-      const notes = input.value.trim();
-
-      if (lang === 'spanish') {
-        spanishUpdates.push({ compositeKey, notes });
-      } else if (lang === 'portuguese') {
-        portugueseUpdates.push({ compositeKey, notes });
-      }
-    });
-
-    const submitBtn = document.getElementById('translators-submit-btn');
-    const originalText = submitBtn.textContent;
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving...';
-    setLoading(true, 'Saving translator assignments...');
-
-    try {
-      const result = await postToAppsScript({
-        action: 'saveTranslatorAssignments',
-        updates: {
-          spanish: spanishUpdates,
-          portuguese: portugueseUpdates
-        }
-      });
-      showStatusBanner(result.message || 'Translator assignments saved.', 'success');
-    } catch (err) {
-      showStatusBanner(`Error saving translator assignments: ${err.message}`, 'error');
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = originalText;
-      setLoading(false);
-    }
   });
 }
 
@@ -944,12 +1534,10 @@ function printDayInPersonSchedule(dayCode) {
   const dayUpper = String(dayCode || '').toUpperCase();
   const dayFullName = CONSTANTS.DAY_LABELS[dayUpper] || dayUpper;
 
-  // Filter strictly to selected day AND modality === 'in-person'
   const matching = getAllFlattenedConferences().filter(
     (c) => c.day === dayUpper && c.modality === 'in-person'
   );
 
-  // Sort strictly chronologically (Time -> Classroom Teacher A-Z -> Conference Name A-Z)
   const sorted = sortConferencesChronologically(matching);
 
   const nowStr = new Date().toLocaleString([], {
@@ -1040,6 +1628,11 @@ function formatTranslatorLabel(val) {
   if (val === 'spanish translator') return 'Spanish Translator';
   if (val === 'portuguese translator') return 'Portuguese Translator';
   return 'None';
+}
+
+function capitalize(str) {
+  const s = String(str || '');
+  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
 }
 
 function setLoading(isLoading, message = 'Loading...') {
