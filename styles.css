@@ -1,6 +1,6 @@
 /* ============================================================================
    AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
-   Stylesheet (styles.css) — Specification v2.2
+   Stylesheet (styles.css) — Specification v2.4
    ============================================================================ */
 
 :root {
@@ -366,6 +366,13 @@ body {
   border-bottom: 2px solid var(--border-light);
 }
 
+.header-action-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .eyebrow-badge {
   display: inline-block;
   font-size: 0.78rem;
@@ -494,8 +501,50 @@ body {
 }
 
 /* ============================================================================
-   SCREEN 2: CLASSROOM TEACHER SCHEDULE ENTRY (24 ROWS)
+   SCREEN 2A: CLASSROOM TEACHER SCHEDULE ENTRY (24 ROWS)
    ============================================================================ */
+
+.btn-view-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background-color: var(--slate-blue);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.68rem 1.15rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn-view-schedule:hover {
+  background-color: var(--slate-blue-hover);
+  transform: translateY(-1px);
+}
+
+.btn-print-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background-color: var(--navy);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.68rem 1.2rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn-print-schedule:hover {
+  background-color: var(--slate-blue);
+  transform: translateY(-1px);
+}
 
 .schedule-table-card {
   background-color: var(--card-bg);
@@ -507,7 +556,7 @@ body {
 
 .schedule-column-headers {
   display: grid;
-  grid-template-columns: 146px 94px 126px 102px minmax(195px, 1fr) 168px 264px;
+  grid-template-columns: 146px 94px 126px 102px minmax(195px, 1fr) 168px 276px;
   gap: 0.65rem;
   align-items: center;
   background-color: var(--navy);
@@ -526,7 +575,7 @@ body {
 
 .conference-row {
   display: grid;
-  grid-template-columns: 146px 94px 126px 102px minmax(195px, 1fr) 168px 264px;
+  grid-template-columns: 146px 94px 126px 102px minmax(195px, 1fr) 168px 276px;
   gap: 0.65rem;
   align-items: center;
   padding: 0.6rem 0.9rem;
@@ -774,6 +823,19 @@ body {
   cursor: pointer;
 }
 
+.language-line-option-label {
+  color: #92400e;
+  background-color: var(--warning-bg);
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.language-line-option-label input[type="checkbox"] {
+  accent-color: #b45309;
+}
+
 .translator-unavailable-text {
   font-size: 0.78rem;
   font-weight: 600;
@@ -781,6 +843,40 @@ body {
   font-style: italic;
   user-select: none;
   cursor: default;
+}
+
+.translator-claimed-banner {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  background-color: var(--teal-bg);
+  border: 1px solid #99f6e4;
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+  color: var(--navy);
+}
+
+.claimed-translator-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.claimed-translator-name {
+  color: var(--teal);
+  font-weight: 800;
+}
+
+.claimed-status-pill {
+  background-color: var(--teal);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
 }
 
 .form-submit-bar {
@@ -813,8 +909,79 @@ body {
 }
 
 /* ============================================================================
+   ORGANIZED SCHEDULE VIEWS (TEACHER & TRANSLATOR)
+   ============================================================================ */
+
+.schedule-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  background-color: var(--accent-bg);
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid var(--slate-blue);
+  border-radius: var(--radius-md);
+  padding: 0.8rem 1.1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.94rem;
+  color: var(--navy);
+}
+
+.organized-schedule-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.day-schedule-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.day-schedule-card-header {
+  background-color: var(--navy);
+  color: #ffffff;
+  padding: 0.75rem 1.1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.day-schedule-card-header h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.sched-time-cell {
+  color: var(--navy);
+  white-space: nowrap;
+}
+
+/* ============================================================================
    SCREEN 3A, 3B, 3C: TRANSLATORS WORKFLOW
    ============================================================================ */
+
+.translator-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.kpi-card-navy {
+  border-top: 4px solid var(--navy);
+}
+
+.kpi-card-teal {
+  border-top: 4px solid var(--teal);
+}
+
+.kpi-card-amber {
+  border-top: 4px solid var(--warning-border);
+}
 
 .btn-add-translator {
   display: inline-flex;
@@ -842,7 +1009,7 @@ body {
   color: var(--navy);
   border: 1.5px solid var(--border-color);
   border-radius: var(--radius-sm);
-  padding: 0.5rem 0.95rem;
+  padding: 0.55rem 0.95rem;
   font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
@@ -952,7 +1119,6 @@ body {
   border-color: var(--danger);
 }
 
-/* Add Translator Form Card */
 .add-translator-card {
   max-width: 520px;
   width: 100%;
@@ -1031,7 +1197,6 @@ body {
   margin-top: 1.5rem;
 }
 
-/* Translator Detail & Claiming View */
 .translator-detail-two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1415,6 +1580,7 @@ body {
 
 @media (max-width: 820px) {
   .translator-detail-two-col,
+  .translator-kpis-grid,
   .kpi-grid-primary {
     grid-template-columns: 1fr;
   }
@@ -1510,6 +1676,19 @@ body {
     border-bottom: 1.5pt solid #173156;
     padding-bottom: 6pt;
     margin-bottom: 12pt;
+  }
+
+  .print-day-block {
+    margin-bottom: 14pt;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-day-heading {
+    margin: 0 0 4pt;
+    font-size: 11.5pt;
+    font-weight: 800;
+    color: #173156;
   }
 
   .print-table {
