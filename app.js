@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
- * Frontend Controller (app.js) — Specification v2.2
+ * Frontend Controller (app.js) — Specification v2.4
  * ============================================================================
  */
 
@@ -46,6 +46,7 @@ const state = {
 document.addEventListener('DOMContentLoaded', () => {
   bindNavigationEvents();
   bindTeacherFormEvents();
+  bindTeacherOrganizedViewEvents();
   bindTranslatorWorkflowEvents();
   bindConfirmModalEvents();
   bindPrintButtons();
@@ -204,8 +205,6 @@ async function postToAppsScript(payload) {
     throw new Error('APPS_SCRIPT_URL is not configured in app.js.');
   }
 
-  // Using text/plain;charset=utf-8 avoids browser CORS preflight OPTIONS requests
-  // while allowing Google Apps Script doPost(e) to parse e.postData.contents as JSON.
   const response = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: {
@@ -235,7 +234,6 @@ function normalizeTranslatorsFromServer(rawTranslators) {
 
   return rawTranslators
     .map((entry, idx) => {
-      // Supports either structured objects from Apps Script or raw spreadsheet row arrays
       if (Array.isArray(entry)) {
         const name = String(entry[0] || '').trim();
         const language = String(entry[1] || '').trim().toLowerCase();
@@ -307,13 +305,16 @@ function applyServerData(data) {
 
   renderHomeScreen();
 
-  // Re-render current sub-screen if active
   if (state.activeScreen === 'screen-teacher' && state.selectedTeacher) {
     openTeacherScreen(state.selectedTeacher);
+  } else if (state.activeScreen === 'screen-teacher-schedule-view' && state.selectedTeacher) {
+    renderTeacherOrganizedScheduleScreen();
   } else if (state.activeScreen === 'screen-translators') {
     renderTranslatorsHomeScreen();
   } else if (state.activeScreen === 'screen-translator-detail') {
     renderTranslatorDetailScreen();
+  } else if (state.activeScreen === 'screen-translator-schedule-view') {
+    renderTranslatorOrganizedScheduleScreen();
   } else if (state.activeScreen === 'screen-other-staff') {
     renderOtherStaffScreen();
   } else if (state.activeScreen === 'screen-main-office') {
@@ -349,7 +350,7 @@ function renderHomeScreen() {
 }
 
 // ============================================================================
-// SCREEN 2: CLASSROOM TEACHER SCHEDULE ENTRY (24 ROWS)
+// SCREEN 2A & 2B: CLASSROOM TEACHER SCHEDULE ENTRY & ORGANIZED SCHEDULE VIEW
 // ============================================================================
 
 function openTeacherScreen(teacherName) {
@@ -462,8 +463,9 @@ function buildConferenceRowElement(entry) {
       </div>
     </div>
 
-    <!-- 8. Mutually Exclusive Translator Checkboxes / Availability Text -->
+    <!-- 8. Mutually Exclusive Translator Checkboxes / Claimed Badge / Availability Text / Language Line -->
     <div class="translator-cell">
+      <div class="translator-claimed-banner hidden" aria-live="polite"></div>
       <div class="translator-checkbox-group">
         <label class="checkbox-label spanish-option-label">
           <input
@@ -473,7 +475,7 @@ function buildConferenceRowElement(entry) {
           />
           <span>Spanish Translator</span>
         </label>
-        <span class="translator-unavailable-text spanish-unavailable-msg hidden">no spanish translation available at this timeslot</span>
+        <span class="translator-unavailable-text spanish-unavailable-msg hidden">no 'in-person' spanish translator available at this time slot</span>
 
         <label class="checkbox-label portuguese-option-label">
           <input
@@ -483,7 +485,16 @@ function buildConferenceRowElement(entry) {
           />
           <span>Portuguese Translator</span>
         </label>
-        <span class="translator-unavailable-text portuguese-unavailable-msg hidden">no portuguese translation available at this time slot</span>
+        <span class="translator-unavailable-text portuguese-unavailable-msg hidden">no 'in-person' portuguese translator available at this time slot</span>
+
+        <label class="checkbox-label language-line-option-label ${translatorVal === 'language line' ? '' : 'hidden'}">
+          <input
+            type="checkbox"
+            class="chk-language-line"
+            ${translatorVal === 'language line' ? 'checked' : ''}
+          />
+          <span>Language Line</span>
+        </label>
       </div>
     </div>
   `;
@@ -499,21 +510,52 @@ function getRowTimeSlotInfo(row) {
   const ampm = row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
 
   if (hStr === '' || mStr === '') {
-    return { isValid: false, day, startMinutes: null };
+    return { isValid: false, day, formattedTime: '', startMinutes: null };
   }
 
   const h = parseInt(hStr, 10);
   const m = parseInt(mStr, 10);
   if (isNaN(h) || h < 1 || h > 12 || isNaN(m) || m < 0 || m > 59) {
-    return { isValid: false, day, startMinutes: null };
+    return { isValid: false, day, formattedTime: '', startMinutes: null };
   }
 
-  const formatted = `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+  const formattedTime = `${h}:${String(m).padStart(2, '0')} ${ampm}`;
   return {
     isValid: true,
     day,
-    startMinutes: parseTimeStringToMinutes(formatted)
+    formattedTime,
+    startMinutes: parseTimeStringToMinutes(formattedTime)
   };
+}
+
+function findClaimingTranslatorForRow(row) {
+  if (!state.selectedTeacher) return null;
+
+  const slot = getRowTimeSlotInfo(row);
+  if (!slot.isValid) return null;
+
+  const confName = row.querySelector('.name-input').value.trim();
+  if (!confName) return null;
+
+  return findClaimingTranslatorForConference({
+    day: slot.day,
+    time: slot.formattedTime,
+    teacher: state.selectedTeacher,
+    name: confName
+  });
+}
+
+function findClaimingTranslatorForConference(conf) {
+  const targetKey = buildConferenceMatchKey(conf);
+  for (let i = 0; i < state.translators.length; i++) {
+    const translator = state.translators[i];
+    for (let j = 0; j < translator.appointments.length; j++) {
+      if (buildConferenceMatchKey(translator.appointments[j]) === targetKey) {
+        return translator;
+      }
+    }
+  }
+  return null;
 }
 
 function doTimeslotsOverlap(dayA, startMinA, dayB, startMinB) {
@@ -521,7 +563,6 @@ function doTimeslotsOverlap(dayA, startMinA, dayB, startMinB) {
   if (startMinA === null || startMinB === null || startMinA >= 9000 || startMinB >= 9000) {
     return false;
   }
-  // Scheduled times cover the 20 minutes after the recorded start time: [start, start + 20)
   return Math.abs(startMinA - startMinB) < CONSTANTS.APPOINTMENT_DURATION_MINUTES;
 }
 
@@ -529,18 +570,15 @@ function isTranslatorAvailableForRow(targetRow, language) {
   const translatorsForLang = state.translators.filter((t) => t.language === language);
   const totalTranslators = translatorsForLang.length;
 
-  // If no translators exist for this language in the 'translators' tab, none are ever available
   if (totalTranslators === 0) {
     return false;
   }
 
   const slot = getRowTimeSlotInfo(targetRow);
-  // Before a valid hour & minute are entered, allow selecting checkboxes since translators exist
   if (!slot.isValid) {
     return true;
   }
 
-  // 1. Count translators of this language who are NOT already booked via claimed appointments at this timeslot
   let freeTranslatorsCount = 0;
   translatorsForLang.forEach((translator) => {
     const hasOverlappingClaim = translator.appointments.some((appt) => {
@@ -556,20 +594,17 @@ function isTranslatorAvailableForRow(targetRow, language) {
     return false;
   }
 
-  // 2. Also subtract unclaimed conferences already scheduled at this overlapping timeslot
-  //    so teachers cannot overbook more simultaneous conferences than available translators.
   const claimedKeys = getClaimedConferenceKeySet();
   const targetLangLabel = language === 'spanish' ? 'spanish translator' : 'portuguese translator';
   let overlappingUnclaimedDemand = 0;
 
-  // Check other teachers' saved schedules
   state.teachers.forEach((teacherName) => {
     if (teacherName === state.selectedTeacher) return;
     const list = state.schedules[teacherName] || [];
     list.forEach((conf) => {
       if (conf.translator !== targetLangLabel) return;
       const confKey = buildConferenceMatchKey({ ...conf, teacher: teacherName });
-      if (claimedKeys.has(confKey)) return; // Already counted via translator's claimed appointments
+      if (claimedKeys.has(confKey)) return;
 
       const confStart = parseTimeStringToMinutes(conf.time);
       if (doTimeslotsOverlap(slot.day, slot.startMinutes, conf.day, confStart)) {
@@ -578,7 +613,6 @@ function isTranslatorAvailableForRow(targetRow, language) {
     });
   });
 
-  // Check other rows currently on this teacher's schedule form
   const allRows = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
   allRows.forEach((otherRow) => {
     if (otherRow === targetRow) return;
@@ -589,12 +623,9 @@ function isTranslatorAvailableForRow(targetRow, language) {
     if (!otherSlot.isValid) return;
 
     const otherName = otherRow.querySelector('.name-input').value.trim();
-    const otherHour = parseInt(otherRow.querySelector('.hour-input').value.trim(), 10);
-    const otherMin = otherRow.querySelector('.minute-input').value.trim().padStart(2, '0');
-    const otherAmpm = otherRow.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
     const otherKey = buildConferenceMatchKey({
       day: otherSlot.day,
-      time: `${otherHour}:${otherMin} ${otherAmpm}`,
+      time: otherSlot.formattedTime,
       teacher: state.selectedTeacher,
       name: otherName
     });
@@ -609,8 +640,8 @@ function isTranslatorAvailableForRow(targetRow, language) {
 }
 
 function updateRowTranslatorAvailability(row) {
-  const spanishAvailable = isTranslatorAvailableForRow(row, 'spanish');
-  const portugueseAvailable = isTranslatorAvailableForRow(row, 'portuguese');
+  const claimedBanner = row.querySelector('.translator-claimed-banner');
+  const checkboxGroup = row.querySelector('.translator-checkbox-group');
 
   const spanishLabel = row.querySelector('.spanish-option-label');
   const chkSpanish = row.querySelector('.chk-spanish');
@@ -619,6 +650,33 @@ function updateRowTranslatorAvailability(row) {
   const portugueseLabel = row.querySelector('.portuguese-option-label');
   const chkPortuguese = row.querySelector('.chk-portuguese');
   const portugueseMsg = row.querySelector('.portuguese-unavailable-msg');
+
+  const languageLineLabel = row.querySelector('.language-line-option-label');
+  const chkLanguageLine = row.querySelector('.chk-language-line');
+
+  const claimingTranslator = findClaimingTranslatorForRow(row);
+  if (claimingTranslator) {
+    chkSpanish.checked = claimingTranslator.language === 'spanish';
+    chkPortuguese.checked = claimingTranslator.language === 'portuguese';
+    chkLanguageLine.checked = false;
+
+    checkboxGroup.classList.add('hidden');
+    claimedBanner.innerHTML = `
+      <span class="claimed-translator-label">${escapeHtml(capitalize(claimingTranslator.language))} Translator:</span>
+      <strong class="claimed-translator-name">${escapeHtml(claimingTranslator.name)}</strong>
+      <span class="claimed-status-pill">Claimed</span>
+    `;
+    claimedBanner.classList.remove('hidden');
+    syncCancelButtonVisibility(row);
+    return;
+  }
+
+  claimedBanner.classList.add('hidden');
+  claimedBanner.innerHTML = '';
+  checkboxGroup.classList.remove('hidden');
+
+  const spanishAvailable = isTranslatorAvailableForRow(row, 'spanish');
+  const portugueseAvailable = isTranslatorAvailableForRow(row, 'portuguese');
 
   if (spanishAvailable) {
     spanishLabel.classList.remove('hidden');
@@ -638,6 +696,15 @@ function updateRowTranslatorAvailability(row) {
     portugueseMsg.classList.remove('hidden');
   }
 
+  // Show 'Language Line' checkbox if either Spanish or Portuguese translator is unavailable
+  // (or if this row was already saved with Language Line selected)
+  if (!spanishAvailable || !portugueseAvailable || chkLanguageLine.checked) {
+    languageLineLabel.classList.remove('hidden');
+  } else {
+    chkLanguageLine.checked = false;
+    languageLineLabel.classList.add('hidden');
+  }
+
   syncCancelButtonVisibility(row);
 }
 
@@ -655,6 +722,7 @@ function isRowPopulated(row) {
   const activeModality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
   const chkSpanish = row.querySelector('.chk-spanish').checked;
   const chkPortuguese = row.querySelector('.chk-portuguese').checked;
+  const chkLanguageLine = row.querySelector('.chk-language-line').checked;
 
   return (
     hourVal !== '' ||
@@ -664,7 +732,8 @@ function isRowPopulated(row) {
     activeAmpm !== 'PM' ||
     activeModality !== 'in-person' ||
     chkSpanish ||
-    chkPortuguese
+    chkPortuguese ||
+    chkLanguageLine
   );
 }
 
@@ -683,6 +752,7 @@ function resetConferenceRowToEmpty(row) {
   const modalityBtns = row.querySelectorAll('.modality-option');
   const chkSpanish = row.querySelector('.chk-spanish');
   const chkPortuguese = row.querySelector('.chk-portuguese');
+  const chkLanguageLine = row.querySelector('.chk-language-line');
 
   daySelect.value = 'WED';
   hourInput.value = '';
@@ -699,6 +769,7 @@ function resetConferenceRowToEmpty(row) {
 
   chkSpanish.checked = false;
   chkPortuguese.checked = false;
+  chkLanguageLine.checked = false;
 
   hourInput.classList.remove('input-invalid');
   minuteInput.classList.remove('input-invalid');
@@ -720,6 +791,7 @@ function attachRowEventListeners(row) {
   const modalityBtns = row.querySelectorAll('.modality-option');
   const chkSpanish = row.querySelector('.chk-spanish');
   const chkPortuguese = row.querySelector('.chk-portuguese');
+  const chkLanguageLine = row.querySelector('.chk-language-line');
 
   cancelBtn.addEventListener('click', () => {
     resetConferenceRowToEmpty(row);
@@ -773,11 +845,11 @@ function attachRowEventListeners(row) {
   nameInput.addEventListener('input', () => {
     stripAsterisks();
     clearRowValidationState(row);
-    syncCancelButtonVisibility(row);
+    updateRowTranslatorAvailability(row);
   });
   nameInput.addEventListener('blur', () => {
     nameInput.value = nameInput.value.replace(/\*/g, '').trim();
-    syncCancelButtonVisibility(row);
+    updateRowTranslatorAvailability(row);
   });
 
   modalityBtns.forEach((btn) => {
@@ -788,15 +860,25 @@ function attachRowEventListeners(row) {
     });
   });
 
+  // Mutually exclusive checkboxes: Spanish Translator, Portuguese Translator, Language Line
   chkSpanish.addEventListener('change', () => {
     if (chkSpanish.checked) {
       chkPortuguese.checked = false;
+      chkLanguageLine.checked = false;
     }
     refreshAllTeacherRowsTranslatorAvailability();
   });
   chkPortuguese.addEventListener('change', () => {
     if (chkPortuguese.checked) {
       chkSpanish.checked = false;
+      chkLanguageLine.checked = false;
+    }
+    refreshAllTeacherRowsTranslatorAvailability();
+  });
+  chkLanguageLine.addEventListener('change', () => {
+    if (chkLanguageLine.checked) {
+      chkSpanish.checked = false;
+      chkPortuguese.checked = false;
     }
     refreshAllTeacherRowsTranslatorAvailability();
   });
@@ -927,10 +1009,12 @@ function bindTeacherFormEvents() {
       const activeModality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
       const isSpanish = row.querySelector('.chk-spanish').checked;
       const isPortuguese = row.querySelector('.chk-portuguese').checked;
+      const isLanguageLine = row.querySelector('.chk-language-line').checked;
 
       let translator = 'no translator';
       if (isSpanish) translator = 'spanish translator';
       else if (isPortuguese) translator = 'portuguese translator';
+      else if (isLanguageLine) translator = 'language line';
 
       validPayloadRows.push({
         day,
@@ -978,7 +1062,135 @@ function bindTeacherFormEvents() {
 }
 
 // ============================================================================
-// SCREEN 3A, 3B, 3C: TRANSLATORS WORKFLOW
+// SCREEN 2B: TEACHER ORGANIZED SCHEDULE & PRINT VIEW
+// ============================================================================
+
+function bindTeacherOrganizedViewEvents() {
+  document.getElementById('open-teacher-schedule-view-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    if (!state.selectedTeacher) return;
+    renderTeacherOrganizedScheduleScreen();
+    navigateTo('screen-teacher-schedule-view');
+  });
+
+  document.getElementById('back-to-teacher-edit-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    navigateTo('screen-teacher');
+  });
+
+  document.getElementById('print-teacher-schedule-btn').addEventListener('click', () => {
+    printTeacherOrganizedSchedule();
+  });
+}
+
+/**
+ * Extracts valid conference entries currently displayed on the teacher's form
+ * (so both saved and just-entered conferences are reflected accurately).
+ */
+function getCurrentTeacherConferencesForOrganizedView() {
+  const teacherName = state.selectedTeacher;
+  if (!teacherName) return [];
+
+  const rowEls = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
+  const entries = [];
+
+  rowEls.forEach((row) => {
+    const slot = getRowTimeSlotInfo(row);
+    const nameStr = row.querySelector('.name-input').value.replace(/\*/g, '').trim();
+    if (!slot.isValid || !nameStr) return;
+
+    const modality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
+    const isSpanish = row.querySelector('.chk-spanish').checked;
+    const isPortuguese = row.querySelector('.chk-portuguese').checked;
+    const isLanguageLine = row.querySelector('.chk-language-line').checked;
+
+    let translator = 'no translator';
+    if (isSpanish) translator = 'spanish translator';
+    else if (isPortuguese) translator = 'portuguese translator';
+    else if (isLanguageLine) translator = 'language line';
+
+    entries.push({
+      day: slot.day,
+      time: slot.formattedTime,
+      timeRange: formatTimeRange20Min(slot.formattedTime),
+      name: nameStr,
+      teacher: teacherName,
+      modality,
+      translator
+    });
+  });
+
+  return sortConferencesChronologically(entries);
+}
+
+function getTeacherTranslatorStatusDisplay(conf) {
+  if (conf.translator === 'spanish translator' || conf.translator === 'portuguese translator') {
+    const langLabel = conf.translator === 'spanish translator' ? 'Spanish Translator' : 'Portuguese Translator';
+    const claimer = findClaimingTranslatorForConference(conf);
+    return claimer ? `${langLabel} (${claimer.name})` : `${langLabel} (Unclaimed)`;
+  }
+  if (conf.translator === 'language line') {
+    return 'Language Line';
+  }
+  return 'None';
+}
+
+function renderTeacherOrganizedScheduleScreen() {
+  const teacherName = state.selectedTeacher;
+  if (!teacherName) return;
+
+  const sorted = getCurrentTeacherConferencesForOrganizedView();
+  const inPersonCount = sorted.filter((c) => c.modality === 'in-person').length;
+  const remoteCount = sorted.length - inPersonCount;
+
+  document.getElementById('teacher-organized-title').textContent = `${teacherName} — Conference Schedule`;
+  document.getElementById('teacher-organized-meta-bar').innerHTML = `
+    <span><strong>Total Conferences:</strong> ${sorted.length}</span>
+    <span><strong>In-Person:</strong> ${inPersonCount}</span>
+    <span><strong>Remote:</strong> ${remoteCount}</span>
+    <span><strong>Slot Duration:</strong> 20 minutes</span>
+  `;
+
+  const container = document.getElementById('teacher-organized-content');
+  if (sorted.length === 0) {
+    container.innerHTML = '<div class="empty-state-box">No conferences scheduled yet for this teacher.</div>';
+    return;
+  }
+
+  container.innerHTML = buildDayGroupedScheduleHtml(sorted, 'teacher');
+}
+
+function printTeacherOrganizedSchedule() {
+  const teacherName = state.selectedTeacher;
+  if (!teacherName) return;
+
+  const sorted = getCurrentTeacherConferencesForOrganizedView();
+  const nowStr = new Date().toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+
+  const bodyHtml = sorted.length > 0
+    ? buildDayGroupedPrintHtml(sorted, 'teacher')
+    : `<div class="print-empty-msg">No conferences scheduled for ${escapeHtml(teacherName)}.</div>`;
+
+  const printArea = document.getElementById('print-area');
+  printArea.innerHTML = `
+    <div class="print-banner">
+      <h1 class="print-banner-title">AAEE Conferences &mdash; ${escapeHtml(teacherName)}</h1>
+    </div>
+    <div class="print-meta-bar">
+      <span><strong>Total Scheduled Conferences:</strong> ${sorted.length} (20-min slots)</span>
+      <span><strong>Printed:</strong> ${escapeHtml(nowStr)}</span>
+    </div>
+    ${bodyHtml}
+  `;
+
+  window.print();
+}
+
+// ============================================================================
+// SCREEN 3A, 3B, 3C, 3D: TRANSLATORS WORKFLOW & ORGANIZED SCHEDULE VIEW
 // ============================================================================
 
 function getTranslatorKey(translator) {
@@ -1007,7 +1219,6 @@ function parseAppointmentCsvString(rawStr, colIndex = 3) {
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 
-  // Expected format: Conference Name, Teacher Name, Modality, Day, Time
   if (parts.length >= 5) {
     const time = parts[parts.length - 1];
     const day = parts[parts.length - 2].toUpperCase();
@@ -1017,7 +1228,6 @@ function parseAppointmentCsvString(rawStr, colIndex = 3) {
     return { raw: rawStr, colIndex, name, teacher, modality, day, time };
   }
 
-  // Fallback if 4 comma-separated tokens (Name, Teacher, Modality, Time)
   if (parts.length === 4) {
     return {
       raw: rawStr,
@@ -1046,7 +1256,12 @@ function normalizeModality(val) {
 }
 
 function buildConferenceMatchKey(item) {
-  const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const norm = (s) =>
+    String(s || '')
+      .replace(/,/g, ' ')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
   return `${norm(item.day)}|${norm(item.time)}|${norm(item.teacher)}|${norm(item.name)}`;
 }
 
@@ -1061,7 +1276,6 @@ function getClaimedConferenceKeySet() {
 }
 
 function bindTranslatorWorkflowEvents() {
-  // Open Add Translator screen
   document.getElementById('open-add-translator-btn').addEventListener('click', () => {
     clearStatusBanner();
     document.getElementById('add-translator-form').reset();
@@ -1069,7 +1283,6 @@ function bindTranslatorWorkflowEvents() {
     document.getElementById('new-translator-name').focus();
   });
 
-  // Back buttons within Translator sub-screens
   document.getElementById('back-to-translators-from-add-btn').addEventListener('click', () => {
     clearStatusBanner();
     renderTranslatorsHomeScreen();
@@ -1089,7 +1302,23 @@ function bindTranslatorWorkflowEvents() {
     navigateTo('screen-translators');
   });
 
-  // Add Translator Form Submission
+  // Translator Organized Schedule View & Print Buttons
+  document.getElementById('open-translator-schedule-view-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    renderTranslatorOrganizedScheduleScreen();
+    navigateTo('screen-translator-schedule-view');
+  });
+
+  document.getElementById('back-to-translator-detail-btn').addEventListener('click', () => {
+    clearStatusBanner();
+    renderTranslatorDetailScreen();
+    navigateTo('screen-translator-detail');
+  });
+
+  document.getElementById('print-translator-schedule-btn').addEventListener('click', () => {
+    printTranslatorOrganizedSchedule();
+  });
+
   document.getElementById('add-translator-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     clearStatusBanner();
@@ -1121,7 +1350,6 @@ function bindTranslatorWorkflowEvents() {
         language
       });
 
-      // Optimistically update local state if backend didn't echo full data
       if (!result.data) {
         state.translators.push({
           rowIndex: state.translators.length + 1,
@@ -1144,6 +1372,27 @@ function bindTranslatorWorkflowEvents() {
 }
 
 function renderTranslatorsHomeScreen() {
+  // Update summary KPIs: Unclaimed Spanish, Unclaimed Portuguese, and Language Line
+  const claimedKeys = getClaimedConferenceKeySet();
+  const unclaimedSpanishCount = state.spanish.filter(
+    (conf) => !claimedKeys.has(buildConferenceMatchKey(conf))
+  ).length;
+  const unclaimedPortugueseCount = state.portuguese.filter(
+    (conf) => !claimedKeys.has(buildConferenceMatchKey(conf))
+  ).length;
+
+  const languageLineConferences = getAllFlattenedConferences().filter(
+    (conf) => conf.translator === 'language line'
+  );
+  const languageLineConfCount = languageLineConferences.length;
+  const languageLineTeacherCount = new Set(languageLineConferences.map((c) => c.teacher)).size;
+
+  document.getElementById('kpi-unclaimed-spanish').textContent = String(unclaimedSpanishCount);
+  document.getElementById('kpi-unclaimed-portuguese').textContent = String(unclaimedPortugueseCount);
+  document.getElementById('kpi-language-line-count').textContent = String(languageLineConfCount);
+  document.getElementById('kpi-language-line-subtext').textContent =
+    `${languageLineConfCount} ${languageLineConfCount === 1 ? 'conference' : 'conferences'} across ${languageLineTeacherCount} ${languageLineTeacherCount === 1 ? 'teacher' : 'teachers'}`;
+
   const grid = document.getElementById('translators-grid');
   grid.innerHTML = '';
 
@@ -1250,7 +1499,6 @@ function renderTranslatorDetailScreen() {
   document.getElementById('claimed-appointments-heading').textContent =
     `${translator.name}'s Claimed Appointments`;
 
-  // Gather all conferences needing this translator's language
   const allForLanguage = translator.language === 'portuguese' ? state.portuguese : state.spanish;
   const claimedKeys = getClaimedConferenceKeySet();
 
@@ -1282,7 +1530,6 @@ function renderUnclaimedConferenceButtons(translator, unclaimedConferences) {
     const modalityLabel = normalizeModality(conf.modality) === 'remote' ? 'Remote' : 'In-Person';
     const modalityClass = normalizeModality(conf.modality) === 'remote' ? 'remote' : 'in-person';
 
-    // Check if this translator already has an overlapping appointment within 20 minutes
     const confStart = parseTimeStringToMinutes(conf.time);
     const hasConflict = translator.appointments.some((appt) =>
       doTimeslotsOverlap(conf.day, confStart, appt.day, parseTimeStringToMinutes(appt.time))
@@ -1392,6 +1639,193 @@ function renderClaimedAppointmentsList(translator) {
 
     container.appendChild(card);
   });
+}
+
+function renderTranslatorOrganizedScheduleScreen() {
+  const translator = getSelectedTranslator();
+  if (!translator) {
+    renderTranslatorsHomeScreen();
+    navigateTo('screen-translators');
+    return;
+  }
+
+  const langLabel = capitalize(translator.language);
+  const sorted = sortConferencesChronologically(
+    translator.appointments.map((appt) => ({
+      ...appt,
+      timeRange: formatTimeRange20Min(appt.time)
+    }))
+  );
+
+  const inPersonCount = sorted.filter((a) => normalizeModality(a.modality) === 'in-person').length;
+  const remoteCount = sorted.length - inPersonCount;
+
+  document.getElementById('translator-organized-lang-badge').textContent = `${langLabel} Translator Schedule`;
+  document.getElementById('translator-organized-title').textContent = `${translator.name} — Translation Schedule`;
+  document.getElementById('translator-organized-meta-bar').innerHTML = `
+    <span><strong>Language:</strong> ${escapeHtml(langLabel)}</span>
+    <span><strong>Total Appointments:</strong> ${sorted.length}</span>
+    <span><strong>In-Person:</strong> ${inPersonCount}</span>
+    <span><strong>Remote:</strong> ${remoteCount}</span>
+  `;
+
+  const container = document.getElementById('translator-organized-content');
+  if (sorted.length === 0) {
+    container.innerHTML = `<div class="empty-state-box">No translation appointments claimed yet for ${escapeHtml(translator.name)}.</div>`;
+    return;
+  }
+
+  container.innerHTML = buildDayGroupedScheduleHtml(sorted, 'translator');
+}
+
+function printTranslatorOrganizedSchedule() {
+  const translator = getSelectedTranslator();
+  if (!translator) return;
+
+  const langLabel = capitalize(translator.language);
+  const sorted = sortConferencesChronologically(
+    translator.appointments.map((appt) => ({
+      ...appt,
+      timeRange: formatTimeRange20Min(appt.time)
+    }))
+  );
+
+  const nowStr = new Date().toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+
+  const bodyHtml = sorted.length > 0
+    ? buildDayGroupedPrintHtml(sorted, 'translator')
+    : `<div class="print-empty-msg">No translation appointments claimed for ${escapeHtml(translator.name)}.</div>`;
+
+  const printArea = document.getElementById('print-area');
+  printArea.innerHTML = `
+    <div class="print-banner">
+      <h1 class="print-banner-title">AAEE Conferences &mdash; ${escapeHtml(translator.name)} (${escapeHtml(langLabel)} Translator)</h1>
+    </div>
+    <div class="print-meta-bar">
+      <span><strong>Total Translation Appointments:</strong> ${sorted.length} (20-min slots)</span>
+      <span><strong>Printed:</strong> ${escapeHtml(nowStr)}</span>
+    </div>
+    ${bodyHtml}
+  `;
+
+  window.print();
+}
+
+// ============================================================================
+// SHARED ORGANIZED SCHEDULE RENDERERS (ON-SCREEN & 8.5" x 11" PRINT)
+// ============================================================================
+
+function groupConferencesByDay(sortedList) {
+  const groups = [];
+  const map = new Map();
+
+  sortedList.forEach((item) => {
+    const dayKey = item.day || 'UNSCHEDULED';
+    if (!map.has(dayKey)) {
+      const group = {
+        dayCode: dayKey,
+        dayLabel: CONSTANTS.DAY_LABELS[dayKey] || dayKey,
+        items: []
+      };
+      map.set(dayKey, group);
+      groups.push(group);
+    }
+    map.get(dayKey).items.push(item);
+  });
+
+  return groups;
+}
+
+function buildDayGroupedScheduleHtml(sortedList, mode) {
+  const dayGroups = groupConferencesByDay(sortedList);
+
+  return dayGroups.map((group) => {
+    const rowsHtml = group.items.map((item) => {
+      const modalityLabel = normalizeModality(item.modality) === 'remote' ? 'Remote' : 'In-Person';
+      const modalityClass = normalizeModality(item.modality) === 'remote' ? 'remote' : 'in-person';
+      const fourthCol = mode === 'translator'
+        ? escapeHtml(item.teacher || '—')
+        : escapeHtml(getTeacherTranslatorStatusDisplay(item));
+
+      return `
+        <tr>
+          <td class="sched-time-cell"><strong>${escapeHtml(item.timeRange || item.time)}</strong></td>
+          <td><strong>${escapeHtml(item.name)}</strong></td>
+          <td><span class="modality-badge ${modalityClass}">${modalityLabel}</span></td>
+          <td>${fourthCol}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const fourthHeader = mode === 'translator' ? 'Classroom Teacher' : 'Translator / Language Line';
+
+    return `
+      <div class="day-schedule-card">
+        <div class="day-schedule-card-header">
+          <h3>${escapeHtml(group.dayLabel)}</h3>
+          <span class="count-pill">${group.items.length} ${group.items.length === 1 ? 'Appointment' : 'Appointments'}</span>
+        </div>
+        <table class="readonly-table">
+          <thead>
+            <tr>
+              <th style="width: 24%;">Time Slot (20 Min)</th>
+              <th style="width: 32%;">Conference Name</th>
+              <th style="width: 16%;">Meeting Type</th>
+              <th style="width: 28%;">${fourthHeader}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildDayGroupedPrintHtml(sortedList, mode) {
+  const dayGroups = groupConferencesByDay(sortedList);
+  const fourthHeader = mode === 'translator' ? 'Classroom Teacher' : 'Translator / Language Line';
+
+  return dayGroups.map((group) => {
+    const rowsHtml = group.items.map((item) => {
+      const modalityLabel = normalizeModality(item.modality) === 'remote' ? 'Remote' : 'In-Person';
+      const fourthCol = mode === 'translator'
+        ? escapeHtml(item.teacher || '—')
+        : escapeHtml(getTeacherTranslatorStatusDisplay(item));
+
+      return `
+        <tr>
+          <td style="width: 24%; font-weight: 700;">${escapeHtml(item.timeRange || item.time)}</td>
+          <td style="width: 32%;">${escapeHtml(item.name)}</td>
+          <td style="width: 16%;">${modalityLabel}</td>
+          <td style="width: 28%;">${fourthCol}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="print-day-block">
+        <h2 class="print-day-heading">${escapeHtml(group.dayLabel.toUpperCase())} (${group.items.length})</h2>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th style="width: 24%;">Time Slot</th>
+              <th style="width: 32%;">Conference Name</th>
+              <th style="width: 16%;">Meeting Type</th>
+              <th style="width: 28%;">${fourthHeader}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
 }
 
 // ============================================================================
@@ -1586,7 +2020,7 @@ function printDayInPersonSchedule(dayCode) {
 }
 
 // ============================================================================
-// CHRONOLOGICAL SORTING & SHARED HELPERS
+// CHRONOLOGICAL SORTING, TIME FORMATTING & SHARED HELPERS
 // ============================================================================
 
 function parseTimeStringToMinutes(timeStr) {
@@ -1601,6 +2035,23 @@ function parseTimeStringToMinutes(timeStr) {
     return (h === 12 ? 0 : h * 60) + m;
   }
   return (h === 12 ? 720 : (h + 12) * 60) + m;
+}
+
+function minutesTo12HourString(totalMinutes) {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours24 = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  const period = hours24 >= 12 ? 'PM' : 'AM';
+  let hours12 = hours24 % 12;
+  if (hours12 === 0) hours12 = 12;
+  return `${hours12}:${String(mins).padStart(2, '0')} ${period}`;
+}
+
+function formatTimeRange20Min(startTimeStr) {
+  const startMin = parseTimeStringToMinutes(startTimeStr);
+  if (startMin >= 9000) return String(startTimeStr || '');
+  const endStr = minutesTo12HourString(startMin + CONSTANTS.APPOINTMENT_DURATION_MINUTES);
+  return `${minutesTo12HourString(startMin)} – ${endStr}`;
 }
 
 function sortConferencesChronologically(list) {
@@ -1627,6 +2078,7 @@ function sortConferencesChronologically(list) {
 function formatTranslatorLabel(val) {
   if (val === 'spanish translator') return 'Spanish Translator';
   if (val === 'portuguese translator') return 'Portuguese Translator';
+  if (val === 'language line') return 'Language Line';
   return 'None';
 }
 
