@@ -1,6 +1,6 @@
 /* ============================================================================
    AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
-   Stylesheet (styles.css) — Specification v2.1
+   Stylesheet (styles.css) — Specification v2.2
    ============================================================================ */
 
 :root {
@@ -151,7 +151,7 @@ body {
 }
 
 /* ============================================================================
-   STATUS BANNER & LOADING OVERLAY
+   STATUS BANNER, LOADING OVERLAY & CONFIRMATION MODAL
    ============================================================================ */
 
 .status-banner {
@@ -227,6 +227,93 @@ body {
   color: var(--navy);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 120;
+}
+
+.modal-card {
+  background-color: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22);
+  max-width: 460px;
+  width: 100%;
+  padding: 1.5rem 1.6rem;
+  border: 1px solid var(--border-light);
+}
+
+.modal-title {
+  margin: 0 0 0.55rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+.modal-message {
+  margin: 0 0 1.35rem;
+  font-size: 0.98rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.btn-modal-cancel {
+  background-color: #f1f5f9;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 1.1rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-modal-cancel:hover {
+  background-color: #e2e8f0;
+}
+
+.btn-modal-confirm {
+  background-color: var(--navy);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 1.2rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-modal-confirm:hover {
+  background-color: var(--slate-blue);
+}
+
+.btn-modal-danger {
+  background-color: var(--danger);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 1.2rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-modal-danger:hover {
+  background-color: var(--danger-hover);
+}
+
 /* ============================================================================
    MAIN CONTAINER & SCREEN TRANSITIONS
    ============================================================================ */
@@ -294,16 +381,6 @@ body {
   font-size: 1.65rem;
   font-weight: 800;
   color: var(--navy);
-}
-
-.helper-callout {
-  background-color: var(--accent-bg);
-  border-left: 4px solid var(--slate-blue);
-  color: var(--text-primary);
-  padding: 0.8rem 1rem;
-  border-radius: var(--radius-sm);
-  margin-bottom: 1.25rem;
-  font-size: 0.94rem;
 }
 
 /* ============================================================================
@@ -470,7 +547,6 @@ body {
   box-shadow: inset 4px 0 0 var(--danger);
 }
 
-/* Cancel Conference Action Cell at Beginning of Populated Rows */
 .action-cell {
   display: flex;
   align-items: center;
@@ -505,7 +581,6 @@ body {
   transform: translateY(1px);
 }
 
-/* 1. Day of Week Dropdown */
 .day-select-wrap {
   position: relative;
   display: flex;
@@ -538,7 +613,6 @@ body {
   color: var(--text-secondary);
 }
 
-/* 2, 3, 4. Hour : Minute Inputs */
 .time-group {
   display: flex;
   flex-direction: column;
@@ -589,7 +663,6 @@ body {
   line-height: 1.2;
 }
 
-/* 5. AM / PM Binary Toggle Switch */
 .ampm-switch {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
@@ -615,7 +688,6 @@ body {
   color: #ffffff;
 }
 
-/* 6. Name Input Field */
 .name-cell {
   display: flex;
   flex-direction: column;
@@ -642,7 +714,6 @@ body {
   background-color: #fff5f5;
 }
 
-/* 7. Graphic Modality Switch (in-person on left, remote on right) */
 .modality-switch {
   display: inline-grid;
   grid-template-columns: 1fr 1fr;
@@ -678,12 +749,11 @@ body {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
-/* 8. Mutually Exclusive Translator Checkboxes */
 .translator-checkbox-group {
   display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
 }
 
 .checkbox-label {
@@ -702,6 +772,15 @@ body {
   height: 16px;
   accent-color: var(--navy);
   cursor: pointer;
+}
+
+.translator-unavailable-text {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-style: italic;
+  user-select: none;
+  cursor: default;
 }
 
 .form-submit-bar {
@@ -734,10 +813,226 @@ body {
 }
 
 /* ============================================================================
-   SCREEN 3: TRANSLATORS SCREEN
+   SCREEN 3A, 3B, 3C: TRANSLATORS WORKFLOW
    ============================================================================ */
 
-.translators-two-col {
+.btn-add-translator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background-color: var(--teal);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.7rem 1.2rem;
+  font-size: 0.96rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn-add-translator:hover {
+  background-color: var(--teal-hover);
+  transform: translateY(-1px);
+}
+
+.btn-secondary-nav {
+  background-color: #ffffff;
+  color: var(--navy);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.95rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-secondary-nav:hover {
+  background-color: var(--accent-bg);
+  border-color: var(--slate-blue);
+}
+
+.translators-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.translator-unit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.translator-select-btn {
+  background-color: var(--card-bg);
+  color: var(--navy);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.05rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.translator-select-btn:hover {
+  border-color: var(--teal);
+  background-color: var(--teal-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.translator-btn-name {
+  font-size: 1.08rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+.translator-btn-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.translator-lang-pill {
+  display: inline-block;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.translator-lang-pill.lang-spanish {
+  background-color: var(--accent-bg);
+  color: var(--navy);
+  border: 1px solid #bfdbfe;
+}
+
+.translator-lang-pill.lang-portuguese {
+  background-color: var(--teal-bg);
+  color: var(--teal);
+  border: 1px solid #99f6e4;
+}
+
+.translator-appt-count {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.btn-delete-translator {
+  width: 100%;
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 0.42rem 0.75rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-delete-translator:hover {
+  background-color: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
+}
+
+/* Add Translator Form Card */
+.add-translator-card {
+  max-width: 520px;
+  width: 100%;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.65rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-field-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-field-label {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 0.45rem;
+}
+
+.form-text-input {
+  width: 100%;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.8rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background-color: #ffffff;
+}
+
+.form-text-input:focus {
+  outline: none;
+  border-color: var(--slate-blue);
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.18);
+}
+
+.language-radio-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.language-choice-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 1rem;
+  font-weight: 700;
+  color: var(--navy);
+  background-color: #f8fafc;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.language-choice-pill:has(input:checked) {
+  border-color: var(--teal);
+  background-color: var(--teal-bg);
+  color: var(--teal);
+}
+
+.language-choice-pill input[type="radio"] {
+  accent-color: var(--teal);
+  width: 16px;
+  height: 16px;
+}
+
+.add-translator-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* Translator Detail & Claiming View */
+.translator-detail-two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
@@ -758,11 +1053,12 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
 }
 
 .pane-header h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.06rem;
   font-weight: 700;
 }
 
@@ -774,6 +1070,14 @@ body {
   background-color: var(--teal);
 }
 
+.pane-subhint {
+  padding: 0.55rem 0.95rem;
+  background-color: #f1f5f9;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
 .count-pill {
   background-color: rgba(255, 255, 255, 0.2);
   color: #ffffff;
@@ -781,6 +1085,7 @@ body {
   font-size: 0.85rem;
   padding: 0.2rem 0.65rem;
   border-radius: 999px;
+  white-space: nowrap;
 }
 
 .count-pill-navy {
@@ -795,6 +1100,38 @@ body {
   gap: 0.75rem;
 }
 
+.unclaimed-conf-btn {
+  width: 100%;
+  text-align: left;
+  border: 1.5px solid var(--border-color);
+  background-color: #ffffff;
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s ease;
+}
+
+.unclaimed-conf-btn:hover {
+  border-color: var(--slate-blue);
+  background-color: var(--accent-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.conflict-warning-tag {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #b45309;
+  background-color: var(--warning-bg);
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.55rem;
+}
+
 .translator-entry-card {
   border: 1px solid var(--border-light);
   background-color: #fbfdff;
@@ -802,7 +1139,11 @@ body {
   padding: 0.85rem 0.95rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.55rem;
+}
+
+.claimed-appt-card {
+  border-left: 4px solid var(--teal);
 }
 
 .translator-card-top {
@@ -827,6 +1168,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .modality-badge.in-person {
@@ -844,35 +1186,13 @@ body {
 .translator-meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.85rem;
   font-size: 0.88rem;
   color: var(--text-secondary);
 }
 
 .translator-meta-item strong {
   color: var(--text-primary);
-}
-
-.translator-note-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.translator-note-input {
-  width: 100%;
-  border: 1.5px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  padding: 0.48rem 0.7rem;
-  font-size: 0.94rem;
-  background-color: #ffffff;
-  color: var(--text-primary);
-}
-
-.translator-note-input:focus {
-  outline: none;
-  border-color: var(--slate-blue);
-  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.18);
 }
 
 .empty-state-box {
@@ -1094,7 +1414,7 @@ body {
 }
 
 @media (max-width: 820px) {
-  .translators-two-col,
+  .translator-detail-two-col,
   .kpi-grid-primary {
     grid-template-columns: 1fr;
   }
