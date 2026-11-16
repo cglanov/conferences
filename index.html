@@ -63,6 +63,18 @@
       </div>
     </div>
 
+    <!-- Confirmation Modal Dialog -->
+    <div id="confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <div class="modal-card">
+        <h3 id="confirm-modal-title" class="modal-title">Confirm Action</h3>
+        <p id="confirm-modal-message" class="modal-message"></p>
+        <div class="modal-actions">
+          <button type="button" id="confirm-modal-cancel-btn" class="btn-modal-cancel">Cancel</button>
+          <button type="button" id="confirm-modal-accept-btn" class="btn-modal-confirm">Confirm</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Content Viewport -->
     <main class="main-container">
       <!-- =================================================================
@@ -157,51 +169,118 @@
       </section>
 
       <!-- =================================================================
-           SCREEN 3: TRANSLATORS SCREEN
+           SCREEN 3A: TRANSLATORS HOME SCREEN
            ================================================================= -->
       <section id="screen-translators" class="screen" aria-labelledby="translators-screen-title">
         <div class="screen-title-row">
           <div>
             <span class="eyebrow-badge">Language Support Coordination</span>
-            <h2 id="translators-screen-title" class="page-title">Translator Assignments</h2>
+            <h2 id="translators-screen-title" class="page-title">Translators</h2>
           </div>
+          <button type="button" id="open-add-translator-btn" class="btn-add-translator">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Add translator</span>
+          </button>
         </div>
 
-        <div class="helper-callout">
-          Enter translator name to scheduled conference and click Submit Changes
+        <p class="section-subtitle">Select a translator to view unclaimed conferences and manage their claimed appointments.</p>
+
+        <div id="translators-grid" class="translators-home-grid">
+          <!-- Dynamically populated from 'translators' tab -->
+        </div>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 3B: ADD TRANSLATOR SCREEN
+           ================================================================= -->
+      <section id="screen-add-translator" class="screen" aria-labelledby="add-translator-title">
+        <div class="screen-title-row">
+          <div>
+            <span class="eyebrow-badge">Language Support Coordination</span>
+            <h2 id="add-translator-title" class="page-title">Add Translator</h2>
+          </div>
+          <button type="button" id="back-to-translators-from-add-btn" class="btn-secondary-nav">
+            &larr; Back to Translators
+          </button>
         </div>
 
-        <form id="translators-form" novalidate>
-          <div class="translators-two-col">
-            <!-- Left Pane: Spanish Translation Requests -->
-            <div class="translator-pane">
-              <div class="pane-header pane-header-spanish">
-                <h3>Spanish Translation Requests</h3>
-                <span id="spanish-count-badge" class="count-pill">0</span>
-              </div>
-              <div id="spanish-requests-list" class="translator-cards-list">
-                <!-- Populated dynamically -->
+        <div class="add-translator-card">
+          <form id="add-translator-form" novalidate>
+            <div class="form-field-group">
+              <label for="new-translator-name" class="form-field-label">Translator Name</label>
+              <input
+                type="text"
+                id="new-translator-name"
+                class="form-text-input"
+                placeholder="Enter translator full name"
+                required
+              />
+            </div>
+
+            <div class="form-field-group">
+              <span class="form-field-label">Language</span>
+              <div class="language-radio-group" role="radiogroup" aria-label="Translator Language">
+                <label class="language-choice-pill">
+                  <input type="radio" name="translator-language" value="spanish" checked />
+                  <span>Spanish</span>
+                </label>
+                <label class="language-choice-pill">
+                  <input type="radio" name="translator-language" value="portuguese" />
+                  <span>Portuguese</span>
+                </label>
               </div>
             </div>
 
-            <!-- Right Pane: Portuguese Translation Requests -->
-            <div class="translator-pane">
-              <div class="pane-header pane-header-portuguese">
-                <h3>Portuguese Translation Requests</h3>
-                <span id="portuguese-count-badge" class="count-pill">0</span>
-              </div>
-              <div id="portuguese-requests-list" class="translator-cards-list">
-                <!-- Populated dynamically -->
-              </div>
+            <div class="add-translator-actions">
+              <button type="button" id="cancel-add-translator-btn" class="btn-modal-cancel">Cancel</button>
+              <button type="submit" id="save-new-translator-btn" class="btn-primary-submit">Add Translator</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           SCREEN 3C: INDIVIDUAL TRANSLATOR CLAIMING & APPOINTMENTS SCREEN
+           ================================================================= -->
+      <section id="screen-translator-detail" class="screen" aria-labelledby="translator-detail-title">
+        <div class="screen-title-row">
+          <div>
+            <span id="translator-detail-lang-badge" class="eyebrow-badge">Translator Schedule</span>
+            <h2 id="translator-detail-title" class="page-title">Translator Name</h2>
+          </div>
+          <button type="button" id="back-to-translators-from-detail-btn" class="btn-secondary-nav">
+            &larr; Back to Translators
+          </button>
+        </div>
+
+        <div class="translator-detail-two-col">
+          <!-- Left Pane: Unclaimed Conferences Needing Translation -->
+          <div class="translator-pane">
+            <div class="pane-header pane-header-spanish">
+              <h3 id="unclaimed-conferences-heading">Unclaimed Conferences Needing a Translator</h3>
+              <span id="unclaimed-count-badge" class="count-pill">0</span>
+            </div>
+            <div class="pane-subhint">Click a conference below to claim it as one of your appointments.</div>
+            <div id="unclaimed-conferences-list" class="translator-cards-list">
+              <!-- Populated dynamically as clickable conference buttons -->
             </div>
           </div>
 
-          <div class="form-submit-bar">
-            <button type="submit" id="translators-submit-btn" class="btn-primary-submit">
-              Submit Changes
-            </button>
+          <!-- Right Pane: Translator's Currently Claimed Appointments -->
+          <div class="translator-pane">
+            <div class="pane-header pane-header-portuguese">
+              <h3 id="claimed-appointments-heading">Currently Claimed Appointments</h3>
+              <span id="claimed-count-badge" class="count-pill">0</span>
+            </div>
+            <div class="pane-subhint">Each scheduled appointment covers 20 minutes from the start time.</div>
+            <div id="claimed-appointments-list" class="translator-cards-list">
+              <!-- Populated dynamically from the translator's row in 'translators' tab -->
+            </div>
           </div>
-        </form>
+        </div>
       </section>
 
       <!-- =================================================================
