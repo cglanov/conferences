@@ -265,8 +265,26 @@ body {
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.65rem;
+}
+
+.btn-modal-discard {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 1.05rem;
+  font-size: 0.94rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-modal-discard:hover {
+  background-color: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
 }
 
 .btn-modal-cancel {
@@ -879,10 +897,10 @@ body {
   border-radius: 999px;
 }
 
-.form-submit-bar {
-  margin-top: 1.35rem;
-  display: flex;
-  justify-content: flex-end;
+.header-action-cluster .btn-primary-submit {
+  padding: 0.68rem 1.35rem;
+  font-size: 0.94rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary-submit {
