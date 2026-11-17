@@ -35,6 +35,7 @@ const state = {
   },
   activeScreen: 'screen-home',
   selectedTeacher: null,
+  teacherFormInitialSnapshot: '',
   selectedTranslatorKey: null, // `${rowIndex}::${name}`
   selectedOtherStaffTeacher: null
 };
@@ -54,13 +55,42 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function bindNavigationEvents() {
-  document.getElementById('back-to-home-btn').addEventListener('click', () => {
+  document.getElementById('back-to-home-btn').addEventListener('click', async () => {
     clearStatusBanner();
+    if (hasUnsavedTeacherChanges()) {
+      const canLeave = await promptTeacherUnsavedChanges();
+      if (!canLeave) return;
+    }
     navigateTo('screen-home');
   });
 
-  document.getElementById('refresh-data-btn').addEventListener('click', () => {
+  document.getElementById('refresh-data-btn').addEventListener('click', async () => {
+    if (hasUnsavedTeacherChanges()) {
+      const canLeave = await promptTeacherUnsavedChanges();
+      if (!canLeave) return;
+    }
     loadAllData(true);
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedTeacherChanges()) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  window.addEventListener('popstate', async () => {
+    if (hasUnsavedTeacherChanges()) {
+      history.pushState({ screen: state.activeScreen }, '');
+      const canLeave = await promptTeacherUnsavedChanges();
+      if (canLeave) {
+        navigateTo('screen-home', { skipHistory: true });
+      }
+      return;
+    }
+    if (state.activeScreen !== 'screen-home') {
+      navigateTo('screen-home', { skipHistory: true });
+    }
   });
 
   document.getElementById('nav-translators-btn').addEventListener('click', () => {
@@ -82,8 +112,13 @@ function bindNavigationEvents() {
   });
 }
 
-function navigateTo(screenId) {
+function navigateTo(screenId, options = {}) {
+  const prevScreen = state.activeScreen;
   state.activeScreen = screenId;
+
+  if (!options.skipHistory && screenId !== 'screen-home' && prevScreen === 'screen-home') {
+    history.pushState({ screen: screenId }, '');
+  }
 
   document.querySelectorAll('.screen').forEach((sec) => {
     sec.classList.toggle('active', sec.id === screenId);
@@ -108,18 +143,20 @@ let activeModalResolver = null;
 function bindConfirmModalEvents() {
   const modal = document.getElementById('confirm-modal');
   const cancelBtn = document.getElementById('confirm-modal-cancel-btn');
+  const altBtn = document.getElementById('confirm-modal-alt-btn');
   const acceptBtn = document.getElementById('confirm-modal-accept-btn');
 
-  const closeWith = (confirmed) => {
+  const closeWith = (result) => {
     modal.classList.add('hidden');
     if (activeModalResolver) {
       const resolve = activeModalResolver;
       activeModalResolver = null;
-      resolve(confirmed);
+      resolve(result);
     }
   };
 
   cancelBtn.addEventListener('click', () => closeWith(false));
+  altBtn.addEventListener('click', () => closeWith('alt'));
   acceptBtn.addEventListener('click', () => closeWith(true));
 
   modal.addEventListener('click', (e) => {
@@ -135,16 +172,33 @@ function bindConfirmModalEvents() {
   });
 }
 
-function showConfirmDialog({ title, message, confirmLabel = 'Confirm', variant = 'primary' }) {
+function showConfirmDialog({
+  title,
+  message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  altLabel = '',
+  variant = 'primary'
+}) {
   const modal = document.getElementById('confirm-modal');
   const titleEl = document.getElementById('confirm-modal-title');
   const msgEl = document.getElementById('confirm-modal-message');
+  const cancelBtn = document.getElementById('confirm-modal-cancel-btn');
+  const altBtn = document.getElementById('confirm-modal-alt-btn');
   const acceptBtn = document.getElementById('confirm-modal-accept-btn');
 
   titleEl.textContent = title;
   msgEl.textContent = message;
+  cancelBtn.textContent = cancelLabel;
   acceptBtn.textContent = confirmLabel;
   acceptBtn.className = variant === 'danger' ? 'btn-modal-danger' : 'btn-modal-confirm';
+
+  if (altLabel) {
+    altBtn.textContent = altLabel;
+    altBtn.classList.remove('hidden');
+  } else {
+    altBtn.classList.add('hidden');
+  }
 
   modal.classList.remove('hidden');
   acceptBtn.focus();
@@ -353,6 +407,55 @@ function renderHomeScreen() {
 // SCREEN 2A & 2B: CLASSROOM TEACHER SCHEDULE ENTRY & ORGANIZED SCHEDULE VIEW
 // ============================================================================
 
+function serializeTeacherFormState() {
+  const rows = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
+  return JSON.stringify(
+    rows.map((row) => ({
+      day: row.querySelector('.day-select').value,
+      hour: row.querySelector('.hour-input').value.trim(),
+      minute: row.querySelector('.minute-input').value.trim(),
+      ampm: row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM',
+      name: row.querySelector('.name-input').value.trim(),
+      modality: row.querySelector('.modality-option.active')?.dataset.modality || 'in-person',
+      spanish: row.querySelector('.chk-spanish').checked,
+      portuguese: row.querySelector('.chk-portuguese').checked,
+      languageLine: row.querySelector('.chk-language-line').checked
+    }))
+  );
+}
+
+function hasUnsavedTeacherChanges() {
+  if (
+    (state.activeScreen !== 'screen-teacher' &&
+      state.activeScreen !== 'screen-teacher-schedule-view') ||
+    !state.selectedTeacher
+  ) {
+    return false;
+  }
+  return serializeTeacherFormState() !== state.teacherFormInitialSnapshot;
+}
+
+async function promptTeacherUnsavedChanges() {
+  const teacherLabel = state.selectedTeacher || 'this teacher';
+  const choice = await showConfirmDialog({
+    title: 'Submit Schedule Changes?',
+    message: `You have unsaved changes to ${teacherLabel}'s conference schedule. Would you like to submit your changes before going back?`,
+    confirmLabel: 'Submit Changes',
+    altLabel: 'Leave Without Submitting',
+    cancelLabel: 'Cancel',
+    variant: 'primary'
+  });
+
+  if (choice === true) {
+    return await submitTeacherSchedule();
+  }
+  if (choice === 'alt') {
+    state.teacherFormInitialSnapshot = serializeTeacherFormState();
+    return true;
+  }
+  return false;
+}
+
 function openTeacherScreen(teacherName) {
   state.selectedTeacher = teacherName;
   document.getElementById('teacher-screen-title').textContent = teacherName;
@@ -371,6 +474,7 @@ function openTeacherScreen(teacherName) {
   }
 
   refreshAllTeacherRowsTranslatorAvailability();
+  state.teacherFormInitialSnapshot = serializeTeacherFormState();
 }
 
 function buildConferenceRowElement(entry) {
@@ -944,121 +1048,131 @@ function bindTeacherFormEvents() {
   const form = document.getElementById('teacher-schedule-form');
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    clearStatusBanner();
+    await submitTeacherSchedule();
+  });
+}
 
-    if (!state.selectedTeacher) return;
+async function submitTeacherSchedule() {
+  clearStatusBanner();
 
-    const rowEls = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
-    const validPayloadRows = [];
-    let hasValidationErrors = false;
-    let firstInvalidRow = null;
+  if (!state.selectedTeacher) return false;
 
-    rowEls.forEach((row) => {
-      clearRowValidationState(row);
+  const rowEls = Array.from(document.querySelectorAll('#teacher-rows-container .conference-row'));
+  const validPayloadRows = [];
+  let hasValidationErrors = false;
+  let firstInvalidRow = null;
 
-      const day = row.querySelector('.day-select').value;
-      const hourInput = row.querySelector('.hour-input');
-      const minuteInput = row.querySelector('.minute-input');
-      const nameInput = row.querySelector('.name-input');
-      const nameError = row.querySelector('.name-error-hint');
+  rowEls.forEach((row) => {
+    clearRowValidationState(row);
 
-      if (/^\d$/.test(minuteInput.value.trim())) {
-        minuteInput.value = '0' + minuteInput.value.trim();
-      }
-      nameInput.value = nameInput.value.replace(/\*/g, '').trim();
+    const day = row.querySelector('.day-select').value;
+    const hourInput = row.querySelector('.hour-input');
+    const minuteInput = row.querySelector('.minute-input');
+    const nameInput = row.querySelector('.name-input');
+    const nameError = row.querySelector('.name-error-hint');
 
-      const hStr = hourInput.value.trim();
-      const mStr = minuteInput.value.trim();
-      const nameStr = nameInput.value;
+    if (/^\d$/.test(minuteInput.value.trim())) {
+      minuteInput.value = '0' + minuteInput.value.trim();
+    }
+    nameInput.value = nameInput.value.replace(/\*/g, '').trim();
 
-      const isCompletelyBlank = hStr === '' && mStr === '' && nameStr === '';
-      if (isCompletelyBlank) {
-        resetConferenceRowToEmpty(row);
-        return;
-      }
+    const hStr = hourInput.value.trim();
+    const mStr = minuteInput.value.trim();
+    const nameStr = nameInput.value;
 
-      const timeOk = validateRowTime(row, true);
-      let rowOk = timeOk;
-
-      if (hStr === '' || mStr === '') {
-        rowOk = false;
-        if (hStr === '') hourInput.classList.add('input-invalid');
-        if (mStr === '') minuteInput.classList.add('input-invalid');
-        const timeErr = row.querySelector('.time-error-hint');
-        if (!timeErr.textContent) {
-          timeErr.textContent = 'Enter hour (1–12) & minutes (00–59)';
-          timeErr.classList.remove('hidden');
-        }
-      }
-
-      if (nameStr === '') {
-        rowOk = false;
-        nameInput.classList.add('input-invalid');
-        nameError.textContent = 'Enter a name or click "cancel conference" to remove this row';
-        nameError.classList.remove('hidden');
-      }
-
-      if (!rowOk) {
-        hasValidationErrors = true;
-        row.classList.add('row-has-error');
-        if (!firstInvalidRow) firstInvalidRow = row;
-        return;
-      }
-
-      const activeAmpm = row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
-      const activeModality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
-      const isSpanish = row.querySelector('.chk-spanish').checked;
-      const isPortuguese = row.querySelector('.chk-portuguese').checked;
-      const isLanguageLine = row.querySelector('.chk-language-line').checked;
-
-      let translator = 'no translator';
-      if (isSpanish) translator = 'spanish translator';
-      else if (isPortuguese) translator = 'portuguese translator';
-      else if (isLanguageLine) translator = 'language line';
-
-      validPayloadRows.push({
-        day,
-        hour: parseInt(hStr, 10),
-        minute: mStr,
-        ampm: activeAmpm,
-        name: nameStr,
-        modality: activeModality,
-        translator
-      });
-    });
-
-    if (hasValidationErrors) {
-      showStatusBanner(
-        'Please complete all highlighted rows (valid Hour 1–12, Minutes 00–59, and Name) or click "cancel conference" to remove a row.',
-        'error'
-      );
-      if (firstInvalidRow) {
-        firstInvalidRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    const isCompletelyBlank = hStr === '' && mStr === '' && nameStr === '';
+    if (isCompletelyBlank) {
+      resetConferenceRowToEmpty(row);
       return;
     }
 
-    const submitBtn = document.getElementById('teacher-submit-btn');
-    const originalText = submitBtn.textContent;
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Saving...';
-    setLoading(true, `Saving ${state.selectedTeacher}'s conference schedule...`);
+    const timeOk = validateRowTime(row, true);
+    let rowOk = timeOk;
 
-    try {
-      const result = await postToAppsScript({
-        action: 'saveTeacherSchedule',
-        teacher: state.selectedTeacher,
-        rows: validPayloadRows
-      });
-      showStatusBanner(result.message || 'Schedule saved successfully.', 'success');
-    } catch (err) {
-      showStatusBanner(`Error saving schedule: ${err.message}`, 'error');
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = originalText;
-      setLoading(false);
+    if (hStr === '' || mStr === '') {
+      rowOk = false;
+      if (hStr === '') hourInput.classList.add('input-invalid');
+      if (mStr === '') minuteInput.classList.add('input-invalid');
+      const timeErr = row.querySelector('.time-error-hint');
+      if (!timeErr.textContent) {
+        timeErr.textContent = 'Enter hour (1–12) & minutes (00–59)';
+        timeErr.classList.remove('hidden');
+      }
     }
+
+    if (nameStr === '') {
+      rowOk = false;
+      nameInput.classList.add('input-invalid');
+      nameError.textContent = 'Enter a name or click "cancel conference" to remove this row';
+      nameError.classList.remove('hidden');
+    }
+
+    if (!rowOk) {
+      hasValidationErrors = true;
+      row.classList.add('row-has-error');
+      if (!firstInvalidRow) firstInvalidRow = row;
+      return;
+    }
+
+    const activeAmpm = row.querySelector('.ampm-btn.active')?.dataset.ampm || 'PM';
+    const activeModality = row.querySelector('.modality-option.active')?.dataset.modality || 'in-person';
+    const isSpanish = row.querySelector('.chk-spanish').checked;
+    const isPortuguese = row.querySelector('.chk-portuguese').checked;
+    const isLanguageLine = row.querySelector('.chk-language-line').checked;
+
+    let translator = 'no translator';
+    if (isSpanish) translator = 'spanish translator';
+    else if (isPortuguese) translator = 'portuguese translator';
+    else if (isLanguageLine) translator = 'language line';
+
+    validPayloadRows.push({
+      day,
+      hour: parseInt(hStr, 10),
+      minute: mStr,
+      ampm: activeAmpm,
+      name: nameStr,
+      modality: activeModality,
+      translator
+    });
   });
+
+  if (hasValidationErrors) {
+    if (state.activeScreen !== 'screen-teacher') {
+      navigateTo('screen-teacher');
+    }
+    showStatusBanner(
+      'Please complete all highlighted rows (valid Hour 1–12, Minutes 00–59, and Name) or click "cancel conference" to remove a row.',
+      'error'
+    );
+    if (firstInvalidRow) {
+      firstInvalidRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return false;
+  }
+
+  const submitBtn = document.getElementById('teacher-submit-btn');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+  setLoading(true, `Saving ${state.selectedTeacher}'s conference schedule...`);
+
+  try {
+    const result = await postToAppsScript({
+      action: 'saveTeacherSchedule',
+      teacher: state.selectedTeacher,
+      rows: validPayloadRows
+    });
+    state.teacherFormInitialSnapshot = serializeTeacherFormState();
+    showStatusBanner(result.message || 'Schedule saved successfully.', 'success');
+    return true;
+  } catch (err) {
+    showStatusBanner(`Error saving schedule: ${err.message}`, 'error');
+    return false;
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+    setLoading(false);
+  }
 }
 
 // ============================================================================
