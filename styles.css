@@ -1,6 +1,6 @@
 /* ============================================================================
    AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
-   Stylesheet (styles.css) — Specification v2.4
+   Stylesheet (styles.css) — Specification v2.5
    ============================================================================ */
 
 :root {
@@ -1327,6 +1327,31 @@ body {
 
 .claimed-appt-card {
   border-left: 4px solid var(--teal);
+}
+
+.claimed-card-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-unclaim-appt {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 0.24rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-unclaim-appt:hover {
+  background-color: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
 }
 
 .translator-card-top {
