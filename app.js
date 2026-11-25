@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * AAEE CONFERENCES SCHEDULING & COORDINATION SYSTEM
- * Frontend Controller (app.js) — Specification v2.4
+ * Frontend Controller (app.js) — Specification v2.5
  * ============================================================================
  */
 
@@ -1743,7 +1743,10 @@ function renderClaimedAppointmentsList(translator) {
     card.innerHTML = `
       <div class="translator-card-top">
         <h4 class="translator-conf-name">${escapeHtml(appt.name)}</h4>
-        <span class="modality-badge ${modalityClass}">${modalityLabel}</span>
+        <div class="claimed-card-badges">
+          <span class="modality-badge ${modalityClass}">${modalityLabel}</span>
+          <button type="button" class="btn-unclaim-appt">Unclaim</button>
+        </div>
       </div>
       <div class="translator-meta-row">
         ${appt.teacher ? `<span class="translator-meta-item"><strong>Teacher:</strong> ${escapeHtml(appt.teacher)}</span>` : ''}
@@ -1751,8 +1754,61 @@ function renderClaimedAppointmentsList(translator) {
       </div>
     `;
 
+    card.querySelector('.btn-unclaim-appt').addEventListener('click', () => {
+      handleUnclaimAppointmentClick(translator, appt);
+    });
+
     container.appendChild(card);
   });
+}
+
+async function handleUnclaimAppointmentClick(translator, appt) {
+  clearStatusBanner();
+
+  const timeDesc = appt.day ? `${appt.day} at ${appt.time}` : appt.time;
+  const teacherDesc = appt.teacher ? ` with ${appt.teacher}` : '';
+
+  const confirmed = await showConfirmDialog({
+    title: 'Unclaim Conference?',
+    message: `Are you sure you want to unclaim "${appt.name}"${teacherDesc} (${timeDesc})? It will return to the unclaimed list so another translator can claim it.`,
+    confirmLabel: 'Unclaim Conference',
+    variant: 'danger'
+  });
+
+  if (!confirmed) return;
+
+  const matchKey = buildConferenceMatchKey(appt);
+
+  setLoading(true, `Unclaiming "${appt.name}"...`);
+  try {
+    const result = await postToAppsScript({
+      action: 'unclaimConference',
+      rowIndex: translator.rowIndex,
+      translatorName: translator.name,
+      language: translator.language,
+      appointmentRaw: appt.raw || formatAppointmentCsvString(appt),
+      matchKey
+    });
+
+    if (!result.data) {
+      const idx = translator.appointments.findIndex(
+        (a) => buildConferenceMatchKey(a) === matchKey || a.raw === appt.raw
+      );
+      if (idx !== -1) {
+        translator.appointments.splice(idx, 1);
+      }
+      renderTranslatorDetailScreen();
+    }
+
+    showStatusBanner(
+      result.message || `Unclaimed "${appt.name}". It is now available to be claimed again.`,
+      'success'
+    );
+  } catch (err) {
+    showStatusBanner(`Error unclaiming conference: ${err.message}`, 'error');
+  } finally {
+    setLoading(false);
+  }
 }
 
 function renderTranslatorOrganizedScheduleScreen() {
@@ -2229,3 +2285,4 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+```[cite: 1]
